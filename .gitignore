@@ -26,10 +26,7 @@
 
 # OS generated files #
 ######################
-.DS_Store
-.DSStore?
 ._*
-.Spotlight-V100
 .Trashes
 ehthumbs.db
 Thumbs.db
@@ -39,11 +36,7 @@ Thumbs.db
 
 .vscode
 .vscode/*
-mnist_test.csv
-mnist_train.csv
-crypto_bot*.csv
 *.listing
 *.save
 *.test
-
 *.out

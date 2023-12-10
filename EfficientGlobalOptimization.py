@@ -189,7 +189,7 @@ class EGO:
             fun=self._acquisition_function, x0=args[2], \
             args=(args[0], args[1], args[3]), method="L-BFGS-B", \
             bounds=[[args[4][i][1], args[4][i][2]] for i in range(len(args[0][0]))])
-        return (response.fun, response.x)
+        return (-response.fun, response.x)
 
 
 
@@ -234,7 +234,7 @@ def log_marginal_likelihood(K, y):
 
 
 class metric_optimizer:
-    def __init__(self, noise, isotropy = "iso", seed=0, bounds=[1e-4, 1e7], it=4, m=8, m_pts_per_it=5, threads=1):
+    def __init__(self, noise, isotropy = "iso", seed=0, bounds=[1e-4, 1e7], it=4, m=7, m_pts_per_it=5, threads=1):
         # 2^m points are tested at each iteration
         # 2^m_pts_per_it are kept as results for the next iteration
         # (if type is "iso", there is only 1 iteration whatever the value of "it")
@@ -273,7 +273,7 @@ class metric_optimizer:
                 plt.scatter(metric, lml)
                 plt.xscale("log")
                 plt.yscale("log")
-                plt.title("Log marginal likelihood function of the isotropic metric\nIteration" + str(self.it))
+                plt.title("Log marginal likelihood function of the isotropic metric")
                 plt.xlabel("Isotropic metric")
                 plt.ylabel("Log marginal likelihood")
                 plt.grid()
@@ -299,13 +299,12 @@ class metric_optimizer:
             metric_maker = metric_optimizer(noise=0, isotropy="iso", bounds=[1e-3, 1e9], m=9)
 
             for i in range(1, self.it+1):
-                metr_iso = metric_maker.optimal_metric(points, -np.array(lml))
+                metr_iso = metric_maker.optimal_metric(points, np.array(lml))
                 print("Inferring LML in diagonal metric space : iteration " + str(i), flush=True)
                 start_t = time.time()
 
-                next_pts, random = model.next_points(points, -np.array(lml), bounds, metr_iso, threads=self.threads)
-                print(list(next_pts.values()))
-                print(random)
+                next_pts, random = model.next_points(points, np.array(lml), bounds, metr_iso, threads=self.threads)
+                print(next_pts.keys())
                 next_pts = np.vstack([list(next_pts.values())[:2**(self.m_pts_per_it-1)], random])
                 K = [RBF_kernel(X, metric=metr, noise=self.noise) for metr in next_pts]
                 lml = lml + [log_marginal_likelihood(k, y) for k in K]
@@ -326,7 +325,7 @@ class metric_optimizer:
                 plt.grid()
                 plt.show()
 
-            return lowest_metric[lml.index(min(lml))]
+            return lowest_metric[lowest_lml.index(min(lowest_lml))]
 
         else:
             raise Exception("\"type\" parameter must be \"iso\" or \"diag\"")
