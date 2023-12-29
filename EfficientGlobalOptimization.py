@@ -176,6 +176,7 @@ class EGO:
         pool = multiprocessing.Pool(threads)
         args = [(X, y, point, metric, scales_bounds) for point in points]
         res = pool.map(self.POOL_get_optimized_ei_and_point, args)
+        pool.close()
 
         for i in range(len(res)):
             results[res[i][0]] = res[i][1]
@@ -232,6 +233,8 @@ def log_marginal_likelihood(K, y):
     return np.sum(np.log(np.diagonal(L))) + 0.5*np.array(y).dot(S2) + 0.5*len(y)*np.log(2*np.pi)
 
 
+def log_marginal_likelihood_tuple(arg):
+    return log_marginal_likelihood(arg[0], arg[1])
 
 class metric_optimizer:
     def __init__(self, noise, isotropy = "iso", seed=0, bounds=[1e-4, 1e7], it=4, m=7, m_pts_per_it=5, threads=1):
@@ -250,6 +253,7 @@ class metric_optimizer:
 
 
     def optimal_metric(self, X, y, plot=False):
+        X = np.array(X)
         if self.bounds[0] <= 0:
             raise Exception("Lower bound must be strictly positive")
 
@@ -264,7 +268,9 @@ class metric_optimizer:
             pool = multiprocessing.Pool(self.threads)
             args = [(X, metr, self.noise) for metr in metric]
             K = pool.map(RBF_kernel_tuple, args)
-            lml = [log_marginal_likelihood(k, y) for k in K]
+            args = [(k, y) for k in K]
+            lml = pool.map(log_marginal_likelihood_tuple, args)
+            pool.close()
 
             end_t = time.time()
             print(str(round(end_t - start_t)) + " sec", flush=True)
@@ -283,12 +289,14 @@ class metric_optimizer:
 
         elif self.isotropy == "diag":
             bounds = [("log", self.bounds[0], self.bounds[1]) for i in range(len(X[0]))]
-            points = first_points(bounds, seed=self.seed)
+            points = first_points(bounds, m=5, seed=self.seed)
             self.seed += 1
             pool = multiprocessing.Pool(self.threads)
             args = [(X, metr, self.noise) for metr in points]
             K = pool.map(RBF_kernel_tuple, args)
-            lml = [log_marginal_likelihood(k, y) for k in K]
+            args = [(k, y) for k in K]
+            lml = pool.map(log_marginal_likelihood_tuple, args)
+            pool.close()
             lml, points = delete_inf(lml, points)
 
             lowest_lml = [min(lml)]
@@ -306,8 +314,14 @@ class metric_optimizer:
                 next_pts, random = model.next_points(points, np.array(lml), bounds, metr_iso, threads=self.threads)
                 print(next_pts.keys())
                 next_pts = np.vstack([list(next_pts.values())[:2**(self.m_pts_per_it-1)], random])
-                K = [RBF_kernel(X, metric=metr, noise=self.noise) for metr in next_pts]
-                lml = lml + [log_marginal_likelihood(k, y) for k in K]
+
+                pool = multiprocessing.Pool(self.threads)
+                args = [(X, metr, self.noise) for metr in next_pts]
+                K = pool.map(RBF_kernel_tuple, args)
+                args = [(k, y) for k in K]
+                lml = lml + pool.map(log_marginal_likelihood_tuple, args)
+                pool.close()
+
                 points = np.vstack([points, next_pts])
                 lml, points = delete_inf(lml, points)
 
@@ -315,6 +329,7 @@ class metric_optimizer:
                 lowest_metric.append(points[lml.index(min(lml))])
 
                 end_t = time.time()
+
                 print("Lowest LML : " + "{:.2E}".format(min(lowest_lml)) + ", " + str(round(end_t - start_t)) + " sec", flush=True)
 
             if plot:
