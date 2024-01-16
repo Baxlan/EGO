@@ -23,8 +23,8 @@ if __name__ == '__main__':
 
     model = ego.EGO(noise=0)
     mo = ego.metric_optimizer(noise=0)
-    metric = mo.optimal_metric(X_in, y)
-    print(metric)
+    metric = mo.optimal_metric(X_in, y, plot=True)
+    print(metric, flush=True)
 
     #pred, sigma = model.predict(X_in, y, X_out, [1/0.06**2])
     pred, sigma = model.predict(X_in, y, X_out, metric=metric)
