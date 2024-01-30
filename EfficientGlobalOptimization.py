@@ -230,7 +230,7 @@ def delete_inf(list1, list2):
 
 def log_marginal_likelihood(K, y):
     try:
-        L = scipy.linalg.cholesky(K)
+        L = scipy.linalg.cholesky(K, lower = True)
     except:
         return math.inf
 
