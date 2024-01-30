@@ -58,7 +58,7 @@ def check_metric(X, metric):
 # =================================================================
 
 
-
+# this can be optimized by calculating one triangle then copying it to get the second triangle
 def RBF_kernel(X, metric = 1, noise = 0):
     K = np.zeros([len(X), len(X)])
     for i in range(len(X)):
@@ -72,6 +72,11 @@ def RBF_kernel(X, metric = 1, noise = 0):
 
 def RBF_kernel_tuple(args):
     return RBF_kernel(args[0], args[1], args[2])
+
+
+
+def add_point_to_kernel():
+    pass
 
 
 
@@ -126,6 +131,7 @@ class EGO:
 
 
 
+    # this could be optimized by storing the kernel and only adding x_new to this stored kernel
     def predict(self, X, y, X_new, metric = 1):
         check_metric(X, metric)
 

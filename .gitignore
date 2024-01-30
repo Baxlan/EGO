@@ -34,6 +34,7 @@ Thumbs.db
 # project related files #
 #########################
 
+__pycache__
 .vscode
 .vscode/*
 *.listing
