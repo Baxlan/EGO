@@ -35,19 +35,25 @@ def check_scales_bounds(X, scales_bounds):
 
 
 
-def check_metric(X, metric):
+def check_metric(x, metric):
     if isinstance(metric, (int, float, np.floating)):
-        metric = np.diag(np.full(len(X[0]), metric))
-    elif type(metric) == list and len(metric) == 1:
-        metric = np.diag(np.full(len(X[0]), metric[0]))
+        M = np.zeros((len(x[0]), len(x[0])))
+        np.fill_diagonal(M, metric)
+        return M
+    elif (type(metric) == list or (type(metric) == np.ndarray and metric.ndim == 1)) and len(metric) == 1:
+        M = np.zeros((len(x[0]), len(x[0])))
+        np.fill_diagonal(M, metric[0])
+        return M
     else:
         metric = np.array(metric)
-        if metric.ndim == 1 and len(metric) == len(X[0]):
-            metric = np.diag(metric)
-        elif metric.ndim == 2 and len(metric) == len(X[0]) and len(metric[0]) == len(X[0]) and (metric == metric.T).all():
-            pass
+        if metric.ndim == 1 and len(metric) == len(x[0]):
+            return np.diag(metric)
+        elif metric.ndim == 1 and len(metric) == len(x[0])*(len(x[0])+1)/2:
+            return make_symmetric_matrix_from_list(metric)
+        elif metric.ndim == 2 and len(metric) == len(x[0]) and len(metric[0]) == len(x[0]) and np.allclose(metric, metric.T, rtol=1e-9, atol=1e-12):
+            return metric
         else:
-            raise Exception("The \"metric\" parameter must either be a scalar, a 1D array of length N (problem dimensionality), or a 2D symmetric N*N array")
+            raise Exception("The \"metric\" parameter must either be a scalar, a 1D array of length N (problem dimensionality), or a 2D SYMMETRIC N*N array")
 
 
 
