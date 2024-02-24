@@ -21,16 +21,16 @@ def func(x):
     return a * b * c
 
 def func2(x):
-    term1 = math.sin(x[0]) * math.cos(x[1]*0.1)
-    term2 = x[0]**2 * math.sin(5 * math.pi * x[0])**6
-    term3 = math.log(1 + x[2])
-    return term1 * term2 * term3
+    a = math.sin(x[0]) * math.cos(x[1]*0.1)
+    b = x[0]**2 * math.sin(5 * math.pi * x[0])**6
+    c = math.log(1 + x[2])
+    return a * b * c
 
 def func3(x):
-    term1 = math.sin(x[1]*0.1)
-    term2 = x[0]**2 * math.sin(0.1 * x[0])**4
-    term3 = math.log(1 + 1/x[2])
-    return term1 * term2 * term3
+    a = math.sin(x[1]*0.1)
+    b = x[0]**2 * math.sin(0.1 * x[0])**4
+    c = math.log(1 + 1/x[2])
+    return a * b * c
 
 
 
@@ -45,7 +45,7 @@ if __name__ == '__main__':
     y = [func3(x) for x in X_in]
 
     metric = bo.max_metric(X_in)
-    metric = bo.optimized_metric(X_in, y, noise=0, isotropy="aniso", initial=1e-2, method="gradient")
+    metric = bo.optimized_metric(X_in, y, noise=0, isotropy="aniso", initial=-2, method="gradient")
 
     K = bo.make_kernel(x=X_in, noise=0, metric=metric)
     print(metric)
