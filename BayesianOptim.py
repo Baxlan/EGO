@@ -3,7 +3,7 @@ import math
 import numpy as np
 import scipy as sp
 import multiprocessing
-import collections
+import warnings
 
 
 
@@ -187,30 +187,51 @@ def param_optimizer(M, *args):
 
 
 
-def optimized_metric(x, y, noise, isotropy, seed=32, initial=-2, bounds=[-9, 9], method="stochastic"):
+def optimized_metric(x, y, noise, isotropy, seed, initial, bounds, method):
+    if type(initial) != list and type(initial) != np.ndarray:
+        raise Exception("\"initial\" parameter must be a list or an array")
+
     x = np.array(x)
     n = len(x[0])
 
     if isotropy == "iso":
-        elem = [initial]
         b = [bounds]
+        if len(initial) != len(b):
+            raise Exception("Initial point of metric optimization must be of length 1. It is " + str(len(initial)))
+
     elif isotropy == "diag":
-        elem = np.ones(n)*initial
         b = [bounds for i in range(n)]
+        if len(initial) != len(b):
+            raise Exception("Initial point of metric optimization must be of length " + str(len(b)) + ". It is " + str(len(initial)))
+
     elif isotropy == "aniso":
-        elem = np.ones(int(n*(n+1)/2))*initial
         b = [bounds for i in range(int(n*(n+1)/2))]
+        if len(initial) != len(b):
+            raise Exception("Initial point of metric optimization must be of length " + str(len(b)) + ". It is " + str(len(initial)))
+
     else:
         raise Exception("\"isotropy\" parameter must be \"iso\", \"diag\" or \"aniso\"")
 
+
+
     if method=="stochastic":
+        warnings.filterwarnings("ignore")
+
         response = sp.optimize.differential_evolution( \
-            func=param_optimizer, bounds=b, x0=elem, \
+            func=param_optimizer, bounds=b, x0=initial, \
             args=(x, y, noise, bounds), seed=seed)
+
+        warnings.filterwarnings("default")
+
     elif method=="gradient":
+        warnings.filterwarnings("ignore")
+
         response = sp.optimize.minimize( \
-            fun=param_optimizer, bounds=b, x0=elem, \
+            fun=param_optimizer, bounds=b, x0=initial, \
             args=(x, y, noise, bounds), method="L-BFGS-B")
+
+        warnings.filterwarnings("default")
+
     else:
         raise Exception("\"method\" parameter must be \"stochastic\" or \"gradient\"")
 
@@ -218,8 +239,12 @@ def optimized_metric(x, y, noise, isotropy, seed=32, initial=-2, bounds=[-9, 9],
     if isotropy == "aniso":
         M = make_symmetric_matrix_from_list(M)
 
-    return delinearize_metric(x, M, bounds)
+    return delinearize_metric(x, M, bounds), -response.fun
 
+
+
+def optimized_metric_tuple(args):
+    return optimized_metric(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], )
 
 
 def max_metric(x):
@@ -236,8 +261,47 @@ def mean_metric(x):
 
 
 
-def optimal_metric():
-    pass
+def optimal_metric(x, y, noise, bounds, n, seed, threads):
+    if bounds[0] >= bounds[1]:
+        raise Exception("Lower bound must be strictly inferior to upper bound")
+
+    isotropies = {"iso" : 1, "diag" : len(x[0]), "aniso" : int(len(x[0])*(len(x[0])+1)/2)}
+    methods = ["gradient", "stochastic"]
+
+    m = math.ceil(math.log(n)/math.log(2))
+    pool = multiprocessing.Pool(threads)
+    results = {}
+    args = []
+
+    for iso, dim in isotropies.items():
+        generator = sp.stats.qmc.Sobol(d=dim, seed=seed)
+        for method in methods:
+            initial = generator.random_base2(m=m)[:n]
+            initial = [init*(bounds[1]-bounds[0])+bounds[0] for init in initial]
+            for init in initial:
+                args.append((x, y, noise, iso, seed, init, bounds, method))
+
+    metrics_lmls = pool.map(optimized_metric_tuple, args)
+
+    # keys are lml, values are metrics
+    metrics = {}
+
+    for i in range(len(metrics_lmls)-1):
+        metrics[metrics_lmls[i][1]] = metrics_lmls[i][0]
+
+    if -math.inf in metrics.keys():
+        del metrics[-math.inf]
+
+    metrics = dict(sorted(metrics.items(), reverse=True))
+
+    for lml, metric in metrics.items():
+        K = make_kernel(x, noise, metric)
+        if (K > 1e-4).all():
+            continue
+        else:
+            return metric, lml
+
+    raise Exception("No optimal metric found. Try to change bounds, seed or number of points")
 
 
 
@@ -314,24 +378,24 @@ def predict(kernel, x, y, x_new, metric):
 
 
 
-def next_points(kernel, x, y, data_info, n, seed, metric, threads, ei_a=1, ei_log=True, ei_epsilon=1e-13):
+def next_points(kernel, x, y, data_info, n, seed, metric, a, epsilon=1e-13, threads=1):
     check_data_info(x, data_info)
     points = random_points(data_info, 2*n, seed)
 
     results = {}
     pool = multiprocessing.Pool(threads)
-    args = [(kernel, x, y, point, metric, data_info, seed, (ei_a, ei_log, ei_epsilon)) for point in points]
+    args = [(kernel, x, y, point, metric, data_info, seed, a, epsilon) for point in points]
     res  = pool.map(find_max_ei_gradient, args)
     res2 = pool.map(find_max_ei_stochastic, args)
     pool.close()
 
-    res = np.vstack([res, res2])
+    res = res + res2
 
     for i in range(len(res)):
         results[res[i][0]] = res[i][1]
 
     # key is ei, value is point
-    return collections.OrderedDict(sorted(results.items())[:n])
+    return dict(sorted(results.items(), reverse=True)[:n])
 
 
 
@@ -373,7 +437,7 @@ def log_h(z, epsilon):
 
 
 
-def expected_improvement(y_mean, y_sigma, y_best, a, log, epsilon):
+def expected_improvement(y_mean, y_sigma, y_best, a, epsilon):
         ei = []
         for i in range(len(y_mean)):
             if y_sigma[i] <= 0:
@@ -382,11 +446,7 @@ def expected_improvement(y_mean, y_sigma, y_best, a, log, epsilon):
             else:
                 sigma = a*y_sigma[i]
                 z = (y_mean[i] - y_best) / sigma
-
-                if not log:
-                    ei.append(sigma*h(z))
-                else:
-                    ei.append(math.exp(log_h(z, epsilon)+math.log(sigma)))
+                ei.append(math.exp(log_h(z, epsilon)+math.log(sigma)))
 
                 if ei[i] < 0:
                     ei[i] = 0
@@ -398,8 +458,9 @@ def expected_improvement(y_mean, y_sigma, y_best, a, log, epsilon):
 def find_max_ei_gradient(args):
     response = sp.optimize.minimize( \
         fun=acquisition_function, x0=args[3], \
-        args=(args[0], args[1], args[2], args[4], args[7]), method="L-BFGS-B", \
-        bounds=[[args[5][i][1], args[5][i][2]] for i in range(len(args[0][0]))])
+        args=(args[0], args[1], args[2], args[4], args[7], args[8]), method="L-BFGS-B", \
+        bounds=[[args[5][i][3][0], args[5][i][3][1]] for i in range(len(args[1][0]))])
+
     return (-response.fun, response.x)
 
 
@@ -407,15 +468,16 @@ def find_max_ei_gradient(args):
 def find_max_ei_stochastic(args):
     response = sp.optimize.differential_evolution( \
         func=acquisition_function, x0=args[3], seed=args[6], \
-        args=(args[0], args[1], args[2], args[4], args[7]), method="L-BFGS-B", \
-        bounds=[[args[5][i][1], args[5][i][2]] for i in range(len(args[0][0]))])
+        args=(args[0], args[1], args[2], args[4], args[7], args[8]), \
+        bounds=[[args[5][i][3][0], args[5][i][3][1]] for i in range(len(args[1][0]))])
+
     return (-response.fun, response.x)
 
 
 
 def acquisition_function(X_new, *args):
     pred, sigma = predict(args[0], args[1], args[2], [X_new], args[3])
-    return -expected_improvement(pred, sigma, max(args[2]), args[4][0], args[4][1], args[4][2])[0]
+    return -expected_improvement(pred, sigma, max(args[2]), args[4], args[5])[0]
 
 
 

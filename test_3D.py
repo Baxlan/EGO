@@ -44,12 +44,9 @@ if __name__ == '__main__':
 
     y = [func3(x) for x in X_in]
 
-    metric = bo.max_metric(X_in)
-    metric = bo.optimized_metric(X_in, y, noise=0, isotropy="aniso", initial=-2, method="gradient")
-
+    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], n=30, seed=32, threads=6)
     K = bo.make_kernel(x=X_in, noise=0, metric=metric)
-    print(metric)
-    print(bo.log_marginal_likelihood(K, y))
-
+    print(metric, flush=True)
+    print(lml, flush=True)
     np.set_printoptions(formatter={'float':"{0:0.3f}".format})
-    print(K)
+    print(K, flush=True)

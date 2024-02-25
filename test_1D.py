@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 # name, real or discrete, lin or log, bounds
 data_info = [
-    ["var1", "real", "lin", [0, 100]]]
+    ["var1", "real", "lin", [0, 1]]]
 
 
 
@@ -30,12 +30,13 @@ if __name__ == '__main__':
 
 
 
-    metric = bo.optimized_metric(X_in, y, noise=0, isotropy="diag", initial=2.1, method="gradient")
+    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], n=30, seed=32, threads=6)
+
+    print(metric, flush=True)
+    print(lml, flush=True)
+    np.set_printoptions(formatter={'float':"{0:0.3f}".format})
 
     K = bo.make_kernel(x=X_in, noise=0, metric=metric)
-    print(metric, flush=True)
-    print(bo.log_marginal_likelihood(K, y), flush=True)
-    np.set_printoptions(formatter={'float':"{0:0.3f}".format})
     print(K, flush=True)
 
 
@@ -50,7 +51,7 @@ if __name__ == '__main__':
     ax1.plot(X_out, pred, label="surrogate", c="orange")
     ax1.fill(np.hstack([X_out, X_out[::-1]]), np.hstack([pred - 1.9600 * sigma, (pred + 1.9600 * sigma)[::-1]]), alpha = 0.5, fc = "b")
 
-    ei = bo.expected_improvement(pred, sigma, max(y), a=1, log=True, epsilon=1e-13)
+    ei = bo.expected_improvement(pred, sigma, max(y), a=5, epsilon=1e-13)
 
 
 
@@ -59,8 +60,12 @@ if __name__ == '__main__':
 
     X2_in = X_out[np.isclose(ei, max(ei))][0]
     y2 = func(X2_in)
-
     ax1.scatter(X2_in, y2, label="second evaluation", c="red", s=60)
+
+    next_pt = bo.next_points(K, X_in, y, data_info, n=1, seed=32, metric=metric, a=1, threads=6)
+    X3_in = list(next_pt.values())[0][0]
+    y3 = func(X3_in)
+    ax1.scatter(X3_in, y3, label="next point", c="green", s=60)
 
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
