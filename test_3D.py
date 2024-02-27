@@ -44,9 +44,15 @@ if __name__ == '__main__':
 
     y = [func3(x) for x in X_in]
 
-    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], n=30, seed=32, threads=6)
+    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
     K = bo.make_kernel(x=X_in, noise=0, metric=metric)
     print(metric, flush=True)
     print(lml, flush=True)
     np.set_printoptions(formatter={'float':"{0:0.3f}".format})
     print(K, flush=True)
+
+    # test BayesianOptimiser class
+    optimizer = bo.BayesianOptimizer("test", noise=0, data_info=data_info, seed=32, threads=6)
+    optimizer.add_data(X_in, y)
+    next_points = optimizer.next_points(n=10, a=10)
+    print(next_points, flush=True)

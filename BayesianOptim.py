@@ -247,33 +247,19 @@ def optimized_metric_tuple(args):
     return optimized_metric(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], )
 
 
-def max_metric(x):
-    diffs = make_diff_list(x)
-    m = np.max(np.abs(diffs), axis=0)
-    return np.diag(1/np.square(m))
 
-
-
-def mean_metric(x):
-    diffs = make_diff_list(x)
-    m = np.mean(np.abs(diffs), axis=0)
-    return np.diag(1/np.square(m))
-
-
-
-def optimal_metric(x, y, noise, bounds, n, seed, threads):
+def optimal_metric(x, y, noise, bounds, seed, threads):
     if bounds[0] >= bounds[1]:
         raise Exception("Lower bound must be strictly inferior to upper bound")
 
     isotropies = {"iso" : 1, "diag" : len(x[0]), "aniso" : int(len(x[0])*(len(x[0])+1)/2)}
     methods = ["gradient", "stochastic"]
-
-    m = math.ceil(math.log(n)/math.log(2))
-    pool = multiprocessing.Pool(threads)
-    results = {}
     args = []
 
     for iso, dim in isotropies.items():
+        n = 5 * dim * math.ceil(math.sqrt(dim))
+        m = math.ceil(math.log(n)/math.log(2))
+        pool = multiprocessing.Pool(threads)
         generator = sp.stats.qmc.Sobol(d=dim, seed=seed)
         for method in methods:
             initial = generator.random_base2(m=m)[:n]
@@ -380,12 +366,15 @@ def predict(kernel, x, y, x_new, metric):
 
 def next_points(kernel, x, y, data_info, n, seed, metric, a, epsilon=1e-13, threads=1):
     check_data_info(x, data_info)
-    points = random_points(data_info, 2*n, seed)
 
     results = {}
     pool = multiprocessing.Pool(threads)
+    points = random_points(data_info, math.ceil(n/2), seed)
     args = [(kernel, x, y, point, metric, data_info, seed, a, epsilon) for point in points]
     res  = pool.map(find_max_ei_gradient, args)
+
+    points = random_points(data_info, math.floor(n/2), seed+1)
+    args = [(kernel, x, y, point, metric, data_info, seed, a, epsilon) for point in points]
     res2 = pool.map(find_max_ei_stochastic, args)
     pool.close()
 
@@ -394,8 +383,8 @@ def next_points(kernel, x, y, data_info, n, seed, metric, a, epsilon=1e-13, thre
     for i in range(len(res)):
         results[res[i][0]] = res[i][1]
 
-    # key is ei, value is point
-    return dict(sorted(results.items(), reverse=True)[:n])
+    # keys are ei, values are points
+    return dict(sorted(results.items(), reverse=True))
 
 
 
@@ -486,3 +475,56 @@ def acquisition_function(X_new, *args):
 # ============= BAYESIAN OPTIMIZATION CLASS =======================
 # =================================================================
 # =================================================================
+
+
+
+class BayesianOptimizer:
+    def __init__(self, title, noise, data_info, seed, threads, x = [], y = [], epsilon=1e-13):
+        if  x != [] and np.array(x).ndim != 2:
+            raise Exception("data must be 2-dimensional")
+
+        self._title = title
+        self._noise = noise
+        self._data_info = data_info
+        self._seed = seed
+        self._threads = threads
+        self._x = x
+        self._y = y
+        self._epsilon = epsilon
+
+
+
+    def add_data(self, x, y):
+        if  np.array(x).ndim != 2:
+            raise Exception("data must be 2-dimensional")
+        if self._x == []:
+            self._x = x
+            self._y = y
+        else:
+            self._x = np.vstack([self._x, x])
+            self._y = np.vstack([self._y, y])
+
+
+
+
+    def first_points(self, n):
+        self._seed += 1
+        return first_points(self._data_info, n, self._seed)
+
+
+
+    def next_points(self, n, a=1, metric_bounds=[-12, 12]):
+        self._seed += 1
+        print("Calculating optimal metric", flush=True)
+        metric, lml = optimal_metric(self._x, self._y, self._noise, metric_bounds, self._seed, self._threads)
+        K = make_kernel(self._x, self._noise, metric)
+
+        self._seed += 1
+        m = 5 * len(self._data_info) * math.ceil(math.sqrt(len(self._data_info)))
+        print("Calculating next points", flush=True)
+        next_pts = list(next_points(K, self._x, self._y, self._data_info, m, self._seed, metric, a, self._epsilon, self._threads).values())
+        if n < len(next_pts)-1:
+            n = len(next_pts)-1
+        return next_pts[:n]
+    
+        # make an "augment points" function (or add it to next_points() ?) looking around +/- 2%

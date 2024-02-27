@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
 
 
-    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], n=30, seed=32, threads=6)
+    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
 
     print(metric, flush=True)
     print(lml, flush=True)
@@ -58,14 +58,10 @@ if __name__ == '__main__':
     ax2 = ax1.twinx()
     ax2.plot(X_out, ei, label="expected improvement", c="cyan")
 
-    X2_in = X_out[np.isclose(ei, max(ei))][0]
-    y2 = func(X2_in)
-    ax1.scatter(X2_in, y2, label="second evaluation", c="red", s=60)
-
     next_pt = bo.next_points(K, X_in, y, data_info, n=1, seed=32, metric=metric, a=1, threads=6)
-    X3_in = list(next_pt.values())[0][0]
-    y3 = func(X3_in)
-    ax1.scatter(X3_in, y3, label="next point", c="green", s=60)
+    X2_in = list(next_pt.values())[0][0]
+    y2 = func(X2_in)
+    ax1.scatter(X2_in, y2, label="next point", c="red", s=60)
 
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
