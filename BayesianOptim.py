@@ -4,6 +4,7 @@ import numpy as np
 import scipy as sp
 import multiprocessing
 import warnings
+import copy
 
 
 
@@ -35,36 +36,88 @@ def check_data_info(x, data_info):
             raise Exception("Fourth data info length must be 2 (lower and upper boundaries of the variable). Those of the " + str(i) + "th element is " + str(len(data_info[i][3])))
         if data_info[i][3][0] >= data_info[i][3][1]:
             raise Exception("Lower boundary of the " + str(i) + "th variable must be strictly inferior to its upper boundary")
-        if data_info[i][2] == "log" and data_info[i][3][0] <= 0:
-            raise Exception("Lower boundary of the " + str(i) + "th variable must be strictly positive because its scale is \"log\"")
+        if data_info[i][2] == "log" and data_info[i][3][0] == 0:
+            raise Exception("Lower boundary of the " + str(i) + "th variable cannot be 0 because its scale is \"log\"")
+        if data_info[i][2] == "log" and data_info[i][3][0] < 0 and data_info[i][3][1] > 0:
+            raise Exception("Boundaries of the " + str(i) + "th variable must be of the same sign because its scale is \"log\"")
 
 
 
-# convert original data_info, deleting categorical variables and adding dummy ones to replace them
-def convert_data_info(x, data_info):
-    check_data_info(x, data_info)
+def convert_data_info(data_info):
+    new_data_info = []
+    for i in range(len(data_info)):
+        if data_info[i][1] == "real" or data_info[i][1] == "discrete":
+            new_data_info.append(data_info[i])
+
+        else:
+            for j in range(len(data_info[3])):
+                if type(data_info[3][j]) != str:
+                    raise Exception("Categories of categorical variables must be str")
+
+                new_data_info.append([data_info[0] + "~" + data_info[3][j], "real", "lin", [0, 1]])
+
+    check_data_info(new_data_info)
+    return new_data_info
 
 
 
-# convert categorical variables to dummy ones
-def convert_inputs(inputs, original_data_info, converted_data_info):
-    pass
+def categorify_data(x, data_info):
+    out = []
+    return out
 
 
 
-# convert dummy variables to categorical ones
-def convert_outputs(out, original_data_info, converted_data_info):
-    pass
+def preprocess(x, data_info):
+    check_data_info(data_info)
+    inp = copy.deepcopy(x)
+
+    for i in range(len(data_info)):
+
+        # linearize log scaled variables
+        if data_info[i][2] == "log":
+            sign = 1
+            if data_info[i][3][0] < 0:
+                sign = -1
+            inp[:, i] = np.ln(sign*inp[:, i])
+
+            # normalize log variables
+            inp[:, i] -= np.ln(sign*data_info[i][3][0])
+            inp[:, i] /= np.ln(sign*data_info[i][3][1])
+
+        # normalize non log variables
+        else:
+            inp[:, i] -= data_info[i][3][0]
+            inp[:, i] /= data_info[i][3][1]
+
+    return inp
 
 
 
-def preprocess_data(x):
-    pass
-    # linearize log scaled variables
+def postprocess(x, data_info):
+    check_data_info(data_info)
+    inp = copy.deepcopy(x)
 
-    # dummyfy categorical variables
+    for i in range(len(data_info)):
+        if data_info[i][2] == "log":
+            sign = 1
+            if data_info[i][3][0] < 0:
+                sign = -1
 
-    return x
+            # denormalize log variables
+            inp[:, i] *= np.ln(sign*data_info[i][3][1])
+            inp[:, i] += np.ln(sign*data_info[i][3][0])
+            # exponentiate log scaled variables
+            inp[:, i] = np.exp(sign*inp[:, i])
+
+
+         # denormalize non log variables
+        else:
+            inp[:, i] *= data_info[i][3][1]
+            inp[:, i] += data_info[i][3][0]
+
+    categorified = categorify_data(inp, data_info)
+
+    return inp, categorified
 
 
 
@@ -118,9 +171,7 @@ def make_symmetric_matrix_from_list(vals):
 
 
 
-def make_diff_list(x, data_info):
-    check_data_info(x, data_info)
-
+def make_diff_list(x):
     diffs = []
     for i in range(len(x)):
         for j in range(len(x)-i):
@@ -340,6 +391,7 @@ def first_points(data_info, n, seed):
 
 
 def random_points(data_info, n, seed):
+    check_data_info([np.ones(len(data_info))], data_info)
     m = math.ceil(math.log(n)/math.log(2))
     points_generator = sp.stats.qmc.Sobol(d=len(data_info), seed=seed)
     points = points_generator.random_base2(m=m)[:n]
@@ -365,8 +417,6 @@ def predict(kernel, x, y, x_new, metric):
 
 
 def next_points(kernel, x, y, data_info, n, seed, metric, a, epsilon=1e-13, threads=1):
-    check_data_info(x, data_info)
-
     results = {}
     pool = multiprocessing.Pool(threads)
     points = random_points(data_info, math.ceil(n/2), seed)
@@ -516,7 +566,7 @@ class BayesianOptimizer:
     def next_points(self, n, a=1, metric_bounds=[-12, 12]):
         self._seed += 1
         print("Calculating optimal metric", flush=True)
-        diffs = make_diff_list(self._x, self._data_info)
+        diffs = make_diff_list(self._x)
         metric, lml = optimal_metric(diffs, self._x, self._y, self._noise, metric_bounds, self._seed, self._threads)
         K = make_kernel(diffs, self._noise, metric)
 

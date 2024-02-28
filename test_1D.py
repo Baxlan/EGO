@@ -29,7 +29,7 @@ if __name__ == '__main__':
     y_test = [func(x) for x in X_test]
 
 
-    diffs = bo.make_diff_list(X_in, data_info)
+    diffs = bo.make_diff_list(X_in)
     metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
 
     print(metric, flush=True)
