@@ -29,14 +29,14 @@ if __name__ == '__main__':
     y_test = [func(x) for x in X_test]
 
 
-
-    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
+    diffs = bo.make_diff_list(X_in, data_info)
+    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
 
     print(metric, flush=True)
     print(lml, flush=True)
     np.set_printoptions(formatter={'float':"{0:0.3f}".format})
 
-    K = bo.make_kernel(x=X_in, noise=0, metric=metric)
+    K = bo.make_kernel(diffs=diffs, noise=0, metric=metric)
     print(K, flush=True)
 
 
@@ -51,14 +51,15 @@ if __name__ == '__main__':
     ax1.plot(X_out, pred, label="surrogate", c="orange")
     ax1.fill(np.hstack([X_out, X_out[::-1]]), np.hstack([pred - 1.9600 * sigma, (pred + 1.9600 * sigma)[::-1]]), alpha = 0.5, fc = "b")
 
-    ei = bo.expected_improvement(pred, sigma, max(y), a=5, epsilon=1e-13)
+    a = 5
+    ei = bo.expected_improvement(pred, sigma, max(y), a=a, epsilon=1e-13)
 
 
 
     ax2 = ax1.twinx()
     ax2.plot(X_out, ei, label="expected improvement", c="cyan")
 
-    next_pt = bo.next_points(K, X_in, y, data_info, n=1, seed=32, metric=metric, a=1, threads=6)
+    next_pt = bo.next_points(K, X_in, y, data_info, n=10, seed=32, metric=metric, a=a, threads=6)
     X2_in = list(next_pt.values())[0][0]
     y2 = func(X2_in)
     ax1.scatter(X2_in, y2, label="next point", c="red", s=60)

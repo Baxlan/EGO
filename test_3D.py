@@ -44,8 +44,9 @@ if __name__ == '__main__':
 
     y = [func3(x) for x in X_in]
 
-    metric, lml = bo.optimal_metric(X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
-    K = bo.make_kernel(x=X_in, noise=0, metric=metric)
+    diffs = bo.make_diff_list(X_in, data_info)
+    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
+    K = bo.make_kernel(diffs=diffs, noise=0, metric=metric)
     print(metric, flush=True)
     print(lml, flush=True)
     np.set_printoptions(formatter={'float':"{0:0.3f}".format})

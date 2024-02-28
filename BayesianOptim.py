@@ -118,8 +118,10 @@ def make_symmetric_matrix_from_list(vals):
 
 
 
-def make_diff_list(x):
-    diffs=[]
+def make_diff_list(x, data_info):
+    check_data_info(x, data_info)
+
+    diffs = []
     for i in range(len(x)):
         for j in range(len(x)-i):
             diffs.append(x[i] - x[j+i])
@@ -128,8 +130,7 @@ def make_diff_list(x):
 
 
 
-def make_kernel(x, noise, metric):
-    diffs = make_diff_list(x)
+def make_kernel(diffs, noise, metric):
     K = [np.exp(-np.sum(diff.transpose() * metric * diff)) for diff in diffs]
     K = make_symmetric_matrix_from_list(K)
     return K + noise * np.eye(len(K))
@@ -181,17 +182,16 @@ def delinearize_metric(x, metric, bounds):
 
 
 def param_optimizer(M, *args):
-    metric = delinearize_metric(args[0], M, args[3])
+    metric = delinearize_metric(args[4], M, args[3])
     K = make_kernel(args[0], args[2], metric=metric)
     return -log_marginal_likelihood(K, args[1])
 
 
 
-def optimized_metric(x, y, noise, isotropy, seed, initial, bounds, method):
+def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method):
     if type(initial) != list and type(initial) != np.ndarray:
         raise Exception("\"initial\" parameter must be a list or an array")
 
-    x = np.array(x)
     n = len(x[0])
 
     if isotropy == "iso":
@@ -219,7 +219,7 @@ def optimized_metric(x, y, noise, isotropy, seed, initial, bounds, method):
 
         response = sp.optimize.differential_evolution( \
             func=param_optimizer, bounds=b, x0=initial, \
-            args=(x, y, noise, bounds), seed=seed)
+            args=(diffs, y, noise, bounds, x), seed=seed)
 
         warnings.filterwarnings("default")
 
@@ -228,7 +228,7 @@ def optimized_metric(x, y, noise, isotropy, seed, initial, bounds, method):
 
         response = sp.optimize.minimize( \
             fun=param_optimizer, bounds=b, x0=initial, \
-            args=(x, y, noise, bounds), method="L-BFGS-B")
+            args=(diffs, y, noise, bounds, x), method="L-BFGS-B")
 
         warnings.filterwarnings("default")
 
@@ -244,11 +244,11 @@ def optimized_metric(x, y, noise, isotropy, seed, initial, bounds, method):
 
 
 def optimized_metric_tuple(args):
-    return optimized_metric(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], )
+    return optimized_metric(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8])
 
 
 
-def optimal_metric(x, y, noise, bounds, seed, threads):
+def optimal_metric(diffs, x, y, noise, bounds, seed, threads):
     if bounds[0] >= bounds[1]:
         raise Exception("Lower bound must be strictly inferior to upper bound")
 
@@ -265,7 +265,7 @@ def optimal_metric(x, y, noise, bounds, seed, threads):
             initial = generator.random_base2(m=m)[:n]
             initial = [init*(bounds[1]-bounds[0])+bounds[0] for init in initial]
             for init in initial:
-                args.append((x, y, noise, iso, seed, init, bounds, method))
+                args.append((diffs, x, y, noise, iso, seed, init, bounds, method))
 
     metrics_lmls = pool.map(optimized_metric_tuple, args)
 
@@ -281,7 +281,7 @@ def optimal_metric(x, y, noise, bounds, seed, threads):
     metrics = dict(sorted(metrics.items(), reverse=True))
 
     for lml, metric in metrics.items():
-        K = make_kernel(x, noise, metric)
+        K = make_kernel(diffs, noise, metric)
         if (K > 1e-4).all():
             continue
         else:
@@ -516,8 +516,9 @@ class BayesianOptimizer:
     def next_points(self, n, a=1, metric_bounds=[-12, 12]):
         self._seed += 1
         print("Calculating optimal metric", flush=True)
-        metric, lml = optimal_metric(self._x, self._y, self._noise, metric_bounds, self._seed, self._threads)
-        K = make_kernel(self._x, self._noise, metric)
+        diffs = make_diff_list(self._x, self._data_info)
+        metric, lml = optimal_metric(diffs, self._x, self._y, self._noise, metric_bounds, self._seed, self._threads)
+        K = make_kernel(diffs, self._noise, metric)
 
         self._seed += 1
         m = 5 * len(self._data_info) * math.ceil(math.sqrt(len(self._data_info)))
@@ -526,5 +527,5 @@ class BayesianOptimizer:
         if n < len(next_pts)-1:
             n = len(next_pts)-1
         return next_pts[:n]
-    
+
         # make an "augment points" function (or add it to next_points() ?) looking around +/- 2%
