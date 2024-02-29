@@ -63,12 +63,18 @@ def convert_data_info(data_info):
 
 def categorify_data(x, data_info):
     out = []
+
+    for i in range(len(data_info)):
+        if "~" in data_info[i][0]:
+            name = data_info[i][0].split("~")
+        else:
+            out.append(x[i])
     return out
 
 
 
-def preprocess(x, data_info):
-    check_data_info(data_info)
+def preprocess(x, data_info):  # x, never y
+    check_data_info(x, data_info)
     inp = copy.deepcopy(x)
 
     for i in range(len(data_info)):
@@ -93,8 +99,8 @@ def preprocess(x, data_info):
 
 
 
-def postprocess(x, data_info):
-    check_data_info(data_info)
+def postprocess(x, data_info): # x, never y
+    check_data_info(x, data_info)
     inp = copy.deepcopy(x)
 
     for i in range(len(data_info)):
@@ -563,19 +569,27 @@ class BayesianOptimizer:
 
 
 
-    def next_points(self, n, a=1, metric_bounds=[-12, 12]):
+    def next_points(self, n, a, metric_bounds=[-12, 12]):
+        x = self._x
+        #x = preprocess(self._x, self._data_info)
+
         self._seed += 1
         print("Calculating optimal metric", flush=True)
-        diffs = make_diff_list(self._x)
-        metric, lml = optimal_metric(diffs, self._x, self._y, self._noise, metric_bounds, self._seed, self._threads)
+        diffs = make_diff_list(x)
+        metric, lml = optimal_metric(diffs, x, self._y, self._noise, metric_bounds, self._seed, self._threads)
+        print(metric, flush=True)
+        print(lml, flush=True)
         K = make_kernel(diffs, self._noise, metric)
+        np.set_printoptions(formatter={'float':"{0:0.3f}".format})
+        print(K, flush=True)
 
         self._seed += 1
         m = 5 * len(self._data_info) * math.ceil(math.sqrt(len(self._data_info)))
         print("Calculating next points", flush=True)
-        next_pts = list(next_points(K, self._x, self._y, self._data_info, m, self._seed, metric, a, self._epsilon, self._threads).values())
-        if n < len(next_pts)-1:
-            n = len(next_pts)-1
-        return next_pts[:n]
+        next_pts = np.array(list(next_points(K, x, self._y, self._data_info, m, self._seed, metric, a, self._epsilon, self._threads).values()))[:n]
+        if n > next_pts.shape[0]-1:
+            n =  next_pts.shape[0]-1
+        #next_pts = postprocess(next_pts, self._data_info)
+        return next_pts
 
         # make an "augment points" function (or add it to next_points() ?) looking around +/- 2%
