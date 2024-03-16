@@ -28,6 +28,8 @@ def check_data_info(x, data_info):
             raise Exception("First data info must be of type str (name of the variable). Those of the " + str(i) + "th element is of type " + type(data_info[i][0]))
         if data_info[i][1] != "real" and  data_info[i][1] != "discrete":
             raise Exception("Second data info must be \"real\" or \"discrete\". Those of the " + str(i) + "th element is " + str(data_info[i][1]))
+        if data_info[i][1] == "discrete" and data_info[i][2] != "lin":
+            raise Exception("Third data info must be \"linear\" because its type is \"discrete\". Those of the " + str(i) + "th element is " + str(data_info[i][2]))
         if data_info[i][2] != "lin" and  data_info[i][2] != "log":
             raise Exception("Third data info must be \"lin\" or \"log\". Those of the " + str(i) + "th element is " + str(data_info[i][2]))
         if type(data_info[i][3]) is not list and type(data_info[i][3]) is not tuple:
@@ -43,20 +45,20 @@ def check_data_info(x, data_info):
 
 
 
-def convert_data_info(data_info):
+def dummify_data_info(data_info):
     new_data_info = []
     for i in range(len(data_info)):
         if data_info[i][1] == "real" or data_info[i][1] == "discrete":
             new_data_info.append(data_info[i])
 
-        else:
+        elif data_info[i][1] == "categorical":
             for j in range(len(data_info[3])):
                 if type(data_info[3][j]) != str:
                     raise Exception("Categories of categorical variables must be str")
 
                 new_data_info.append([data_info[0] + "~" + data_info[3][j], "real", "lin", [0, 1]])
-
-    check_data_info(new_data_info)
+        else:
+            raise Exception("Data_info is ill-formed")
     return new_data_info
 
 
@@ -64,11 +66,23 @@ def convert_data_info(data_info):
 def categorify_data(x, data_info):
     out = []
 
-    for i in range(len(data_info)):
-        if "~" in data_info[i][0]:
-            name = data_info[i][0].split("~")
-        else:
-            out.append(x[i])
+    for data in x:
+        out.append([])
+        skipper = 0
+        for i in range(len(data_info)):
+            if data_info[i][1] == "categorical":
+                category = ""
+                val = -1
+                for j in range(len(data_info[i][3])):
+                    if data[i+skipper] > val:
+                        category = data_info[i][3][j]
+                        val = data[i+skipper]
+                    skipper += 1
+                skipper -= 1
+                out[len(out)-1].append(category)
+
+            else:
+                out[len(out)-1].append(data[i+skipper])
     return out
 
 
@@ -437,6 +451,9 @@ def next_points(kernel, x, y, data_info, n, seed, metric, a, epsilon=1e-13, thre
     res = res + res2
 
     for i in range(len(res)):
+        for j in range(len(data_info)):
+            if data_info[j][1] == "discrete":
+                res[i][1][j] = math.round(res[i][1][j])
         results[res[i][0]] = res[i][1]
 
     # keys are ei, values are points
@@ -503,7 +520,7 @@ def expected_improvement(y_mean, y_sigma, y_best, a, epsilon):
 def find_max_ei_gradient(args):
     response = sp.optimize.minimize( \
         fun=acquisition_function, x0=args[3], \
-        args=(args[0], args[1], args[2], args[4], args[7], args[8]), method="L-BFGS-B", \
+        args=(args[0], args[1], args[2], args[4], args[7], args[8], args[5]), method="L-BFGS-B", \
         bounds=[[args[5][i][3][0], args[5][i][3][1]] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
@@ -513,7 +530,7 @@ def find_max_ei_gradient(args):
 def find_max_ei_stochastic(args):
     response = sp.optimize.differential_evolution( \
         func=acquisition_function, x0=args[3], seed=args[6], \
-        args=(args[0], args[1], args[2], args[4], args[7], args[8]), \
+        args=(args[0], args[1], args[2], args[4], args[7], args[8], args[5]), \
         bounds=[[args[5][i][3][0], args[5][i][3][1]] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
@@ -521,6 +538,9 @@ def find_max_ei_stochastic(args):
 
 
 def acquisition_function(X_new, *args):
+    for i in range(len(args[5])):
+        if args[5][i][1] == "discrete":
+            X_new[i] = math.round(X_new[i])
     pred, sigma = predict(args[0], args[1], args[2], [X_new], args[3])
     return -expected_improvement(pred, sigma, max(args[2]), args[4], args[5])[0]
 
