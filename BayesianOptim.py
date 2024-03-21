@@ -538,8 +538,8 @@ def find_max_ei_stochastic(args):
 
 
 def acquisition_function(X_new, *args):
-    for i in range(len(args[5])):
-        if args[5][i][1] == "discrete":
+    for i in range(len(args[6])):
+        if args[6][i][1] == "discrete":
             X_new[i] = math.round(X_new[i])
     pred, sigma = predict(args[0], args[1], args[2], [X_new], args[3])
     return -expected_improvement(pred, sigma, max(args[2]), args[4], args[5])[0]
@@ -562,6 +562,7 @@ class BayesianOptimizer:
         self._title = title
         self._noise = noise
         self._data_info = data_info
+        self._dummy_data_info = dummify_data_info(data_info)
         self._seed = seed
         self._threads = threads
         self._x = x
@@ -590,8 +591,7 @@ class BayesianOptimizer:
 
 
     def next_points(self, n, a, metric_bounds=[-12, 12]):
-        x = self._x
-        #x = preprocess(self._x, self._data_info)
+        x = preprocess(self._x, self._data_info)
 
         self._seed += 1
         print("Calculating optimal metric", flush=True)
@@ -604,12 +604,10 @@ class BayesianOptimizer:
         print(K, flush=True)
 
         self._seed += 1
-        m = 5 * len(self._data_info) * math.ceil(math.sqrt(len(self._data_info)))
+        m = 5 * len(self._dummy_data_info) * math.ceil(math.sqrt(len(self._dummy_data_info)))
         print("Calculating next points", flush=True)
-        next_pts = np.array(list(next_points(K, x, self._y, self._data_info, m, self._seed, metric, a, self._epsilon, self._threads).values()))[:n]
+        next_pts = np.array(list(next_points(K, x, self._y, self._dummy_data_info, m, self._seed, metric, a, self._epsilon, self._threads).values()))[:n]
         if n > next_pts.shape[0]-1:
             n =  next_pts.shape[0]-1
-        #next_pts = postprocess(next_pts, self._data_info)
-        return next_pts
-
-        # make an "augment points" function (or add it to next_points() ?) looking around +/- 2%
+        next_pts = postprocess(next_pts, self._dummy_data_info)
+        return next_pts, categorify_data(next_pts, self._data_info)
