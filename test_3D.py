@@ -45,7 +45,7 @@ if __name__ == '__main__':
     y = [func3(x) for x in X_in]
 
     # test BayesianOptimiser class
-    optimizer = bo.BayesianOptimizer("test", noise=0, data_info=data_info, seed=32, threads=6)
-    optimizer.add_data(X_in, y)
+    optimizer = bo.BayesianOptimizer("test", noise=[0], data_info=data_info, constraints=[], seed=32, threads=6)
+    optimizer.add_data(X_in, np.array(y).reshape(-1,1))
     next_points = optimizer.next_points(n=10, a=10)
     print(next_points, flush=True)

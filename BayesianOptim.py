@@ -26,10 +26,8 @@ def check_data_info(x, data_info):
             raise Exception("\"data_info\" elements must be tuples or lists." + str(i) + "th element is of type " + type(data_info[i]))
         if type(data_info[i][0]) != str:
             raise Exception("First data info must be of type str (name of the variable). Those of the " + str(i) + "th element is of type " + type(data_info[i][0]))
-        if data_info[i][1] != "real" and  data_info[i][1] != "discrete":
-            raise Exception("Second data info must be \"real\" or \"discrete\". Those of the " + str(i) + "th element is " + str(data_info[i][1]))
-        if data_info[i][1] == "discrete" and data_info[i][2] != "lin":
-            raise Exception("Third data info must be \"linear\" because its type is \"discrete\". Those of the " + str(i) + "th element is " + str(data_info[i][2]))
+        if data_info[i][1] != "real"  and  data_info[i][1] != "discrete":
+            raise Exception("Second data info must be \"real\" or \"discrete\". If it is \"categorical\", the dummify_data_info() function must be used. The value of the " + str(i) + "th element is " + str(data_info[i][1]))
         if data_info[i][2] != "lin" and  data_info[i][2] != "log":
             raise Exception("Third data info must be \"lin\" or \"log\". Those of the " + str(i) + "th element is " + str(data_info[i][2]))
         if type(data_info[i][3]) is not list and type(data_info[i][3]) is not tuple:
@@ -58,12 +56,12 @@ def dummify_data_info(data_info):
 
                 new_data_info.append([data_info[0] + "~" + data_info[3][j], "real", "lin", [0, 1]])
         else:
-            raise Exception("Data_info is ill-formed")
+            raise Exception("Second data_info must be \"real\", \"discrete\" or \"categorical\". The value of the " + str(i) + "th element is " + str(data_info[i][1]))
     return new_data_info
 
 
 
-def categorify_data(x, data_info):
+def categorify_and_discretize_data(x, data_info):
     out = []
 
     for data in x:
@@ -80,6 +78,9 @@ def categorify_data(x, data_info):
                     skipper += 1
                 skipper -= 1
                 out[len(out)-1].append(category)
+
+            elif data_info[i][1] == "discrete":
+                out[len(out)-1].append(round(data[i+skipper]))
 
             else:
                 out[len(out)-1].append(data[i+skipper])
@@ -135,7 +136,7 @@ def postprocess(x, data_info): # x, never y
             inp[:, i] *= data_info[i][3][1]
             inp[:, i] += data_info[i][3][0]
 
-    categorified = categorify_data(inp, data_info)
+    categorified = categorify_and_discretize_data(inp, data_info)
 
     return inp, categorified
 
@@ -419,41 +420,38 @@ def random_points(data_info, n, seed):
 
 
 
-def predict(kernel, x, y, x_new, metric):
-        metric = check_metric(x, metric)
+def predict(model, x, x_new):
+        metric = check_metric(x, model[2])
 
         y_mean = []
         y_sigma = []
         for new in x_new:
-            local_kernel = add_to_kernel(kernel, x, new, metric)
+            local_kernel = add_to_kernel(model[0], x, new, metric)
             K = local_kernel[:len(x), :len(x)]
             k = local_kernel[:len(x), -1]
             inv_K = np.linalg.inv(K)
-            y_mean.append(np.dot(np.dot(k, inv_K), y))
+            y_mean.append(np.dot(np.dot(k, inv_K), model[1]))
             y_sigma.append(local_kernel[-1,-1] - np.dot(np.dot(k, inv_K),k))
 
         return np.array(y_mean), np.array(y_sigma)
 
 
 
-def next_points(kernel, x, y, data_info, n, seed, metric, a, epsilon=1e-13, threads=1):
+def next_points(models, x, data_info, constraints, n, seed, a, epsilon=1e-13, threads=1):
     results = {}
     pool = multiprocessing.Pool(threads)
     points = random_points(data_info, math.ceil(n/2), seed)
-    args = [(kernel, x, y, point, metric, data_info, seed, a, epsilon) for point in points]
+    args = [(models, x, point, data_info, a, epsilon, constraints) for point in points]
     res  = pool.map(find_max_ei_gradient, args)
 
     points = random_points(data_info, math.floor(n/2), seed+1)
-    args = [(kernel, x, y, point, metric, data_info, seed, a, epsilon) for point in points]
+    args = [(models, x, point, data_info, a, epsilon, constraints, seed) for point in points]
     res2 = pool.map(find_max_ei_stochastic, args)
     pool.close()
 
     res = res + res2
 
     for i in range(len(res)):
-        for j in range(len(data_info)):
-            if data_info[j][1] == "discrete":
-                res[i][1][j] = math.round(res[i][1][j])
         results[res[i][0]] = res[i][1]
 
     # keys are ei, values are points
@@ -519,9 +517,9 @@ def expected_improvement(y_mean, y_sigma, y_best, a, epsilon):
 
 def find_max_ei_gradient(args):
     response = sp.optimize.minimize( \
-        fun=acquisition_function, x0=args[3], \
-        args=(args[0], args[1], args[2], args[4], args[7], args[8], args[5]), method="L-BFGS-B", \
-        bounds=[[args[5][i][3][0], args[5][i][3][1]] for i in range(len(args[1][0]))])
+        fun=acquisition_function, x0=args[2], \
+        args=(args[0], args[1], args[4], args[5], args[6]), method="L-BFGS-B", \
+        bounds=[[args[3][i][3][0], args[3][i][3][1]] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
 
@@ -529,20 +527,54 @@ def find_max_ei_gradient(args):
 
 def find_max_ei_stochastic(args):
     response = sp.optimize.differential_evolution( \
-        func=acquisition_function, x0=args[3], seed=args[6], \
-        args=(args[0], args[1], args[2], args[4], args[7], args[8], args[5]), \
-        bounds=[[args[5][i][3][0], args[5][i][3][1]] for i in range(len(args[1][0]))])
+        func=acquisition_function, x0=args[2], seed=args[7], \
+        args=(args[0], args[1], args[4], args[5], args[6]), \
+        bounds=[[args[3][i][3][0], args[3][i][3][1]] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
 
 
 
 def acquisition_function(X_new, *args):
-    for i in range(len(args[6])):
-        if args[6][i][1] == "discrete":
-            X_new[i] = math.round(X_new[i])
-    pred, sigma = predict(args[0], args[1], args[2], [X_new], args[3])
-    return -expected_improvement(pred, sigma, max(args[2]), args[4], args[5])[0]
+    if len(args[0]) > 1:
+        for i in range(len(args[0])-1):
+            pred, sigma = predict(args[0][i], args[1], [X_new])
+            if not are_contraint_satifcation_probable(pred, sigma, args[2], args[4][i]):
+                return 0
+
+    pred, sigma = predict(args[0][0], args[1], [X_new])
+    return -expected_improvement(pred, sigma, max(args[0][0][1]), args[2], args[3])[0]
+
+
+
+def are_contraint_satifcation_probable(value, sigma, a, constraint):
+    for nested_constraints in constraint[1]:
+        if are_nested_contraint_satifcation_probable(value, sigma, a, nested_constraints):
+            return True
+
+    return False
+
+
+
+def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
+    if len(constraints) % 2 != 0:
+        print(constraints)
+        raise Exception("Nested constraint must have a pair length")
+
+    for i in range(len(constraints)):
+        if i % 2 != 0:
+            continue
+
+        if constraints[i] == "<":
+            if value - a*sigma >= constraints[i+1]:
+                return False
+        elif constraints[i] == ">":
+            if value + a*sigma <= constraints[i+1]:
+                return False
+        else:
+            raise Exception("Constraint condition must be either > or <")
+
+    return True
 
 
 
@@ -555,26 +587,32 @@ def acquisition_function(X_new, *args):
 
 
 class BayesianOptimizer:
-    def __init__(self, title, noise, data_info, seed, threads, x = [], y = [], epsilon=1e-13):
-        if  x != [] and np.array(x).ndim != 2:
-            raise Exception("data must be 2-dimensional")
-
+    def __init__(self, title, noise, data_info, constraints, seed, threads, epsilon=1e-13):
+        if np.array(noise).size != len(constraints)+1:
+            raise Exception("Noise length must have same length than constraint one + 1 (ie: " + str(len(constraints)+1) + "). " + str(len(noise)) + " provided")
         self._title = title
         self._noise = noise
         self._data_info = data_info
         self._dummy_data_info = dummify_data_info(data_info)
+        self._constraints = constraints
         self._seed = seed
         self._threads = threads
-        self._x = x
-        self._y = y
+        self._x = None
+        self._y = None
         self._epsilon = epsilon
 
 
 
     def add_data(self, x, y):
-        if  np.array(x).ndim != 2:
-            raise Exception("data must be 2-dimensional")
-        if self._x == []:
+        x = np.array(x)
+        y = np.array(y)
+        if  x.ndim != 2:
+            raise Exception("X data must be 2-dimensional")
+        if  y.ndim != 2:
+            raise Exception("Y data must be 2-dimensional")
+        if y.shape[1] != len(self._constraints)+1:
+            raise Exception("Y data must containt as much data as constraints + 1 (ie: " + str(len(self._constraints)+1) + "). " + str(y.shape[1]) + " provided")
+        if self._x == None:
             self._x = x
             self._y = y
         else:
@@ -594,20 +632,29 @@ class BayesianOptimizer:
         x = preprocess(self._x, self._data_info)
 
         self._seed += 1
-        print("Calculating optimal metric", flush=True)
+        print("Calculating optimal metrics", flush=True)
         diffs = make_diff_list(x)
-        metric, lml = optimal_metric(diffs, x, self._y, self._noise, metric_bounds, self._seed, self._threads)
-        print(metric, flush=True)
-        print(lml, flush=True)
-        K = make_kernel(diffs, self._noise, metric)
+
+        metrics = []
+        kernels = []
+        for i in range(len(self._constraints)+1):
+            metric, lml = optimal_metric(diffs, x, self._y[:,i], self._noise[i], metric_bounds, self._seed, self._threads)
+            metrics.append(metric)
+            kernels.append(make_kernel(diffs, self._noise[i], metric))
+
+        print(metrics[0], flush=True)
         np.set_printoptions(formatter={'float':"{0:0.3f}".format})
-        print(K, flush=True)
+        print(kernels[0], flush=True)
 
         self._seed += 1
         m = 5 * len(self._dummy_data_info) * math.ceil(math.sqrt(len(self._dummy_data_info)))
         print("Calculating next points", flush=True)
-        next_pts = np.array(list(next_points(K, x, self._y, self._dummy_data_info, m, self._seed, metric, a, self._epsilon, self._threads).values()))[:n]
+
+        models = []
+        for i in range(len(metrics)):
+            models.append((kernels[i], self._y[:,i], metrics[i]))
+
+        next_pts = np.array(list(next_points(models, x, self._dummy_data_info, m, self._seed, a, self._epsilon, self._threads).values()))[:n]
         if n > next_pts.shape[0]-1:
             n =  next_pts.shape[0]-1
-        next_pts = postprocess(next_pts, self._dummy_data_info)
-        return next_pts, categorify_data(next_pts, self._data_info)
+        return postprocess(next_pts, self._dummy_data_info)
