@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
 
     diffs = bo.make_diff_list(X_in)
-    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
+    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
 
     print(metric, flush=True)
     print(lml, flush=True)
@@ -44,14 +44,14 @@ if __name__ == '__main__':
     pred, sigma = bo.predict(model, X_in, X_out)
 
     X_out = X_out.reshape(1, -1)[0]
+    a = 5
 
     fig, ax1 = plt.subplots()
     ax1.plot(X_test, y_test, label="true function", c="black")
     ax1.scatter(X_in, y, label="first evaluations", c="blue")
     ax1.plot(X_out, pred, label="surrogate", c="orange")
-    ax1.fill(np.hstack([X_out, X_out[::-1]]), np.hstack([pred - 1.9600 * sigma, (pred + 1.9600 * sigma)[::-1]]), alpha = 0.5, fc = "b")
+    ax1.fill(np.hstack([X_out, X_out[::-1]]), np.hstack([pred - a * sigma, (pred + a * sigma)[::-1]]), alpha = 0.5, fc = "b")
 
-    a = 5
     ei = bo.expected_improvement(pred, sigma, max(y), a=a, epsilon=1e-13)
 
 

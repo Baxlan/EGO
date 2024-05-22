@@ -97,18 +97,22 @@ def preprocess(x, data_info):  # x, never y
         # linearize log scaled variables
         if data_info[i][2] == "log":
             sign = 1
+            inf = data_info[i][3][0]
+            sup = data_info[i][3][1]
             if data_info[i][3][0] < 0:
                 sign = -1
-            inp[:, i] = np.ln(sign*inp[:, i])
+                inf = -data_info[i][3][1]
+                sup = -data_info[i][3][0]
+            inp[:, i] = np.log(sign*inp[:, i])
 
             # normalize log variables
-            inp[:, i] -= np.ln(sign*data_info[i][3][0])
-            inp[:, i] /= np.ln(sign*data_info[i][3][1])
+            inp[:, i] -= np.log(inf)
+            inp[:, i] /= np.log(sup)
 
         # normalize non log variables
         else:
             inp[:, i] -= data_info[i][3][0]
-            inp[:, i] /= data_info[i][3][1]
+            inp[:, i] /= (data_info[i][3][1] - data_info[i][3][0])
 
     return inp
 
@@ -121,24 +125,57 @@ def postprocess(x, data_info): # x, never y
     for i in range(len(data_info)):
         if data_info[i][2] == "log":
             sign = 1
+            inf = data_info[i][3][0]
+            sup = data_info[i][3][1]
             if data_info[i][3][0] < 0:
                 sign = -1
+                inf = -data_info[i][3][1]
+                sup = -data_info[i][3][0]
 
             # denormalize log variables
-            inp[:, i] *= np.ln(sign*data_info[i][3][1])
-            inp[:, i] += np.ln(sign*data_info[i][3][0])
+            inp[:, i] *= np.log(sup)
+            inp[:, i] += np.log(inf)
             # exponentiate log scaled variables
-            inp[:, i] = np.exp(sign*inp[:, i])
+            inp[:, i] = sign*np.exp(inp[:, i])
 
 
          # denormalize non log variables
         else:
-            inp[:, i] *= data_info[i][3][1]
+            inp[:, i] *= (data_info[i][3][1]-data_info[i][3][0])
             inp[:, i] += data_info[i][3][0]
 
     categorified = categorify_and_discretize_data(inp, data_info)
 
     return inp, categorified
+
+
+
+def check_data(x, y):
+    for i in range(x.shape[1]):
+        zero = False
+        one = False
+        for j in range(x.shape[0]):
+            if x[i, j] == 0:
+                zero = True
+            elif x[i, j] == 1:
+                one = True
+            elif x[i, j] < 0 or x[i, j] > 1:
+                raise Exception("Data have not been preprocessed")
+        if not zero or not one:
+            raise Exception("Data have not been preprocessed")
+
+    for i in range(y.shape[1]):
+        zero = False
+        one = False
+        for j in range(y.shape[0]):
+            if y[i, j] == 0:
+                zero = True
+            elif y[i, j] == 1:
+                one = True
+            elif y[i, j] < 0 or x[i, j] > 1:
+                raise Exception("Data have not been preprocessed")
+        if not zero or not one:
+            raise Exception("Data have not been preprocessed")
 
 
 
@@ -311,7 +348,15 @@ def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method
     if isotropy == "aniso":
         M = make_symmetric_matrix_from_list(M)
 
-    return delinearize_metric(x, M, bounds), -response.fun
+    M = delinearize_metric(x, M, bounds)
+
+    if isotropy != "aniso":
+        for i in range(M.shape[0]):
+            for j in range(M.shape[1]):
+                if i != j:
+                    M[i,j] = 0
+
+    return M, -response.fun
 
 
 
@@ -320,7 +365,7 @@ def optimized_metric_tuple(args):
 
 
 
-def optimal_metric(diffs, x, y, noise, bounds, seed, threads):
+def optimal_metric(diffs, x, y, noise, bounds, iso, seed, threads):
     if bounds[0] >= bounds[1]:
         raise Exception("Lower bound must be strictly inferior to upper bound")
 
@@ -328,16 +373,15 @@ def optimal_metric(diffs, x, y, noise, bounds, seed, threads):
     methods = ["gradient", "stochastic"]
     args = []
 
-    for iso, dim in isotropies.items():
-        n = 5 * dim * math.ceil(math.sqrt(dim))
-        m = math.ceil(math.log(n)/math.log(2))
-        pool = multiprocessing.Pool(threads)
-        generator = sp.stats.qmc.Sobol(d=dim, seed=seed)
-        for method in methods:
-            initial = generator.random_base2(m=m)[:n]
-            initial = [init*(bounds[1]-bounds[0])+bounds[0] for init in initial]
-            for init in initial:
-                args.append((diffs, x, y, noise, iso, seed, init, bounds, method))
+    n = 10 * isotropies[iso] * math.ceil(math.sqrt(isotropies[iso]))
+    m = math.ceil(math.log(n)/math.log(2))
+    pool = multiprocessing.Pool(threads)
+    generator = sp.stats.qmc.Sobol(d=isotropies[iso], seed=seed)
+    for method in methods:
+        initial = generator.random_base2(m=m)[:n]
+        initial = [init*(bounds[1]-bounds[0])+bounds[0] for init in initial]
+        for init in initial:
+            args.append((diffs, x, y, noise, iso, seed, init, bounds, method))
 
     metrics_lmls = pool.map(optimized_metric_tuple, args)
 
@@ -389,23 +433,42 @@ def bound_combinations(bounds):
 
 
 
+def scale_points(points, data_info):
+    res = []
+    for i in range(len(points)):
+        res.append(scale_point(points[i], data_info))
+
+    return np.array(res)
+
+
+
 def scale_point(point, data_info):
     for d in range(len(point)):
-        if data_info[d][0] == "lin":
-            point[d] *= (data_info[d][3] - data_info[d][2])
-            point[d] += data_info[d][2]
-        elif data_info[d][0] == "log":
-            point[d] = data_info[d][2] * math.exp(point[d] * math.log(data_info[d][3]/data_info[d][2]))
+        if data_info[d][2] == "log":
+            sign = 1
+            inf = data_info[d][3][0]
+            sup = data_info[d][3][1]
+            if data_info[d][3][0] < 0:
+                sign = -1
+                inf = -data_info[d][3][1]
+                sup = -data_info[d][3][0]
+
+            point[d] *= np.log(sup)
+            point[d] += np.log(inf)
+            point[d] = sign*np.exp(point[d])
+
+        else:
+            point[d] *= (data_info[d][3][1] - data_info[d][3][0])
+            point[d] += data_info[d][3][0]
 
     return point
 
 
 
 def first_points(data_info, n, seed):
-    points = random_points(data_info, n, seed)
-
+    points = random_points(data_info, n, seed) # already scaled
     bounds = bound_combinations([[0,1] for i in range(len(data_info))])
-    bounds = [scale_point(bound, data_info) for bound in bounds]
+    bounds = scale_points(bounds, data_info)
 
     return np.vstack([bounds, points])
 
@@ -519,17 +582,18 @@ def find_max_ei_gradient(args):
     response = sp.optimize.minimize( \
         fun=acquisition_function, x0=args[2], \
         args=(args[0], args[1], args[4], args[5], args[6]), method="L-BFGS-B", \
-        bounds=[[args[3][i][3][0], args[3][i][3][1]] for i in range(len(args[1][0]))])
+        bounds=[[0, 1] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
 
 
 
 def find_max_ei_stochastic(args):
+    print(args[2], flush=True)
     response = sp.optimize.differential_evolution( \
         func=acquisition_function, x0=args[2], seed=args[7], \
         args=(args[0], args[1], args[4], args[5], args[6]), \
-        bounds=[[args[3][i][3][0], args[3][i][3][1]] for i in range(len(args[1][0]))])
+        bounds=[[0, 1] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
 
@@ -587,19 +651,20 @@ def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
 
 
 class BayesianOptimizer:
-    def __init__(self, title, noise, data_info, constraints, seed, threads, epsilon=1e-13):
+    def __init__(self, title, noise, data_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
         if np.array(noise).size != len(constraints)+1:
             raise Exception("Noise length must have same length than constraint one + 1 (ie: " + str(len(constraints)+1) + "). " + str(len(noise)) + " provided")
-        self._title = title
-        self._noise = noise
-        self._data_info = data_info
-        self._dummy_data_info = dummify_data_info(data_info)
-        self._constraints = constraints
-        self._seed = seed
-        self._threads = threads
-        self._x = None
-        self._y = None
-        self._epsilon = epsilon
+        self.title = title
+        self.noise = noise
+        self.data_info = data_info
+        self.dummy_data_info = dummify_data_info(data_info)
+        self.constraints = constraints
+        self.seed = seed
+        self.threads = threads
+        self.x = None
+        self.y = None
+        self.iso = iso
+        self.epsilon = epsilon
 
 
 
@@ -610,51 +675,53 @@ class BayesianOptimizer:
             raise Exception("X data must be 2-dimensional")
         if  y.ndim != 2:
             raise Exception("Y data must be 2-dimensional")
-        if y.shape[1] != len(self._constraints)+1:
-            raise Exception("Y data must containt as much data as constraints + 1 (ie: " + str(len(self._constraints)+1) + "). " + str(y.shape[1]) + " provided")
-        if self._x == None:
-            self._x = x
-            self._y = y
+        if y.shape[1] != len(self.constraints)+1:
+            raise Exception("Y data must containt as much data as constraints + 1 (ie: " + str(len(self.constraints)+1) + "). " + str(y.shape[1]) + " provided")
+        if self.x == None:
+            self.x = x
+            self.y = y
         else:
-            self._x = np.vstack([self._x, x])
-            self._y = np.vstack([self._y, y])
+            self.x = np.vstack([self.x, x])
+            self.y = np.vstack([self.y, y])
 
 
 
 
     def first_points(self, n):
-        self._seed += 1
-        return first_points(self._data_info, n, self._seed)
+        self.seed += 1
+        return first_points(self.data_info, n, self.seed)
 
 
 
     def next_points(self, n, a, metric_bounds=[-12, 12]):
-        x = preprocess(self._x, self._data_info)
+        x = preprocess(self.x, self.data_info)
 
-        self._seed += 1
+        self.seed += 1
         print("Calculating optimal metrics", flush=True)
         diffs = make_diff_list(x)
 
         metrics = []
         kernels = []
-        for i in range(len(self._constraints)+1):
-            metric, lml = optimal_metric(diffs, x, self._y[:,i], self._noise[i], metric_bounds, self._seed, self._threads)
+        for i in range(len(self.constraints)+1):
+            metric, lml = optimal_metric(diffs, x, self.y[:,i], self.noise[i], metric_bounds, self.iso, self.seed, self.threads)
             metrics.append(metric)
-            kernels.append(make_kernel(diffs, self._noise[i], metric))
+            kernels.append(make_kernel(diffs, self.noise[i], metric))
 
         print(metrics[0], flush=True)
+        print("lml = " + str(lml), flush=True)
         np.set_printoptions(formatter={'float':"{0:0.3f}".format})
         print(kernels[0], flush=True)
 
-        self._seed += 1
-        m = 5 * len(self._dummy_data_info) * math.ceil(math.sqrt(len(self._dummy_data_info)))
+        self.seed += 1
+        m = 100 * len(self.dummy_data_info) * math.ceil(math.sqrt(len(self.dummy_data_info)))
         print("Calculating next points", flush=True)
 
         models = []
         for i in range(len(metrics)):
-            models.append((kernels[i], self._y[:,i], metrics[i]))
+            models.append((kernels[i], self.y[:,i], metrics[i]))
 
-        next_pts = np.array(list(next_points(models, x, self._dummy_data_info, m, self._seed, a, self._epsilon, self._threads).values()))[:n]
+
+        next_pts = np.array(list(next_points(models, x, self.dummy_data_info, m, self.seed, a, self.epsilon, self.threads).values()))[:n]
         if n > next_pts.shape[0]-1:
             n =  next_pts.shape[0]-1
-        return postprocess(next_pts, self._dummy_data_info)
+        return postprocess(next_pts, self.dummy_data_info)

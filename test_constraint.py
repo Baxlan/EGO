@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 # name, real or discrete, lin or log, bounds
 data_info = [
-    ["var1", "real", "lin", [0, 1]]]
+    ["var1", "real", "log", [0.01, 1]]]
 
 constraints = [
     ["title", [[">", 0.6, "<", 0.7], [">", 1]]]
@@ -37,8 +37,8 @@ if __name__ == '__main__':
 
 
     diffs = bo.make_diff_list(X_in)
-    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], seed=32, threads=6)
-    metric_constr, lml = bo.optimal_metric(diffs, X_in, y_constr, noise=0, bounds=[-12, 12], seed=32, threads=6)
+    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
+    metric_constr, lml = bo.optimal_metric(diffs, X_in, y_constr, noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
 
     print(metric_constr, flush=True)
     np.set_printoptions(formatter={'float':"{0:0.3f}".format})
@@ -79,7 +79,7 @@ if __name__ == '__main__':
     ax2 = ax1.twinx()
     ax2.plot(X_out, ei, label="expected improvement", c="cyan")
 
-    next_pt = bo.next_points([model, model_constr], X_in, data_info, constraints=constraints, n=10, seed=32, a=a, threads=6)
+    next_pt = bo.next_points([model, model_constr], X_in, data_info, constraints=constraints, n=10, a=a, seed=32, threads=6)
     X2_in = list(next_pt.values())[0][0]
     y2 = func(X2_in)
     ax1.scatter(X2_in, y2, label="next point", c="red", s=60)
