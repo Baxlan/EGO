@@ -88,7 +88,7 @@ def categorify_and_discretize_data(x, data_info):
 
 
 
-def preprocess(x, data_info):  # x, never y
+def preprocess_inputs(x, data_info):
     check_data_info(x, data_info)
     inp = copy.deepcopy(x)
 
@@ -118,9 +118,24 @@ def preprocess(x, data_info):  # x, never y
 
 
 
-def postprocess(x, data_info): # x, never y
-    check_data_info(x, data_info)
-    inp = copy.deepcopy(x)
+def preprocess_outputs(y):
+    out = np.array(copy.deepcopy(y))
+
+    # normalize outputs
+    for i in range(out.shape[1]):
+        min = np.min(out[:, i])
+        max = np.max(out[:, i])
+        out[:, i] -= min
+        out[:, i] /= (max - min)
+
+
+    return out
+
+
+
+def postprocess_inputs(scaled_x, data_info):
+    check_data_info(scaled_x, data_info)
+    inp = copy.deepcopy(scaled_x)
 
     for i in range(len(data_info)):
         if data_info[i][2] == "log":
@@ -138,15 +153,30 @@ def postprocess(x, data_info): # x, never y
             # exponentiate log scaled variables
             inp[:, i] = sign*np.exp(inp[:, i])
 
-
-         # denormalize non log variables
+        # denormalize non log variables
         else:
             inp[:, i] *= (data_info[i][3][1]-data_info[i][3][0])
             inp[:, i] += data_info[i][3][0]
 
-    categorified = categorify_and_discretize_data(inp, data_info)
+    return inp
 
-    return inp, categorified
+
+
+def postprocess_output(scaled_y, y, scaled_sigma = []):
+    out = copy.deepcopy(scaled_y)
+
+    # denormalize outputs
+    min = np.min(y)
+    max = np.max(y)
+    out *= (max-min)
+    out += min
+
+    if len(scaled_sigma) == 0:
+        return out
+    else:
+        sigma = copy.deepcopy(scaled_sigma)
+        sigma *= (max-min)
+        return out, sigma
 
 
 
@@ -466,7 +496,8 @@ def scale_point(point, data_info):
 
 
 def first_points(data_info, n, seed):
-    points = random_points(data_info, n, seed) # already scaled
+    points = random_points(data_info, n, seed)
+    points = scale_points(points, data_info)
     bounds = bound_combinations([[0,1] for i in range(len(data_info))])
     bounds = scale_points(bounds, data_info)
 
@@ -479,7 +510,7 @@ def random_points(data_info, n, seed):
     m = math.ceil(math.log(n)/math.log(2))
     points_generator = sp.stats.qmc.Sobol(d=len(data_info), seed=seed)
     points = points_generator.random_base2(m=m)[:n]
-    return [scale_point(point, data_info) for point in points]
+    return points
 
 
 
@@ -589,7 +620,6 @@ def find_max_ei_gradient(args):
 
 
 def find_max_ei_stochastic(args):
-    print(args[2], flush=True)
     response = sp.optimize.differential_evolution( \
         func=acquisition_function, x0=args[2], seed=args[7], \
         args=(args[0], args[1], args[4], args[5], args[6]), \
@@ -622,7 +652,6 @@ def are_contraint_satifcation_probable(value, sigma, a, constraint):
 
 def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
     if len(constraints) % 2 != 0:
-        print(constraints)
         raise Exception("Nested constraint must have a pair length")
 
     for i in range(len(constraints)):
@@ -665,6 +694,8 @@ class BayesianOptimizer:
         self.y = None
         self.iso = iso
         self.epsilon = epsilon
+        self.kernel = None
+        self.metric = None
 
 
 
@@ -694,7 +725,10 @@ class BayesianOptimizer:
 
 
     def next_points(self, n, a, metric_bounds=[-12, 12]):
-        x = preprocess(self.x, self.data_info)
+        x = preprocess_inputs(self.x, self.data_info)
+        y = preprocess_outputs(self.y)
+
+        print(np.hstack([x, y]), flush=True)
 
         self.seed += 1
         print("Calculating optimal metrics", flush=True)
@@ -703,7 +737,7 @@ class BayesianOptimizer:
         metrics = []
         kernels = []
         for i in range(len(self.constraints)+1):
-            metric, lml = optimal_metric(diffs, x, self.y[:,i], self.noise[i], metric_bounds, self.iso, self.seed, self.threads)
+            metric, lml = optimal_metric(diffs, x, y[:,i], self.noise[i], metric_bounds, self.iso, self.seed, self.threads)
             metrics.append(metric)
             kernels.append(make_kernel(diffs, self.noise[i], metric))
 
@@ -718,10 +752,13 @@ class BayesianOptimizer:
 
         models = []
         for i in range(len(metrics)):
-            models.append((kernels[i], self.y[:,i], metrics[i]))
+            models.append((kernels[i], y[:,i], metrics[i]))
 
 
         next_pts = np.array(list(next_points(models, x, self.dummy_data_info, m, self.seed, a, self.epsilon, self.threads).values()))[:n]
         if n > next_pts.shape[0]-1:
             n =  next_pts.shape[0]-1
-        return postprocess(next_pts, self.dummy_data_info)
+
+        self.kernel = kernels[0]
+        self.metric = metrics[0]
+        return postprocess_inputs(next_pts, self.dummy_data_info)

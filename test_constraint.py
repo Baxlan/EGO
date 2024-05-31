@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 # name, real or discrete, lin or log, bounds
 data_info = [
-    ["var1", "real", "log", [0.01, 1]]]
+    ["var1", "real", "lin", [0.01, 1]]]
 
 constraints = [
     ["title", [[">", 0.6, "<", 0.7], [">", 1]]]
@@ -25,20 +25,24 @@ def func2(x):
 if __name__ == '__main__':
     # evaluated points
     X_in = np.arange(0, 1.1, 0.1)
-    y = [func(x) for x in X_in]
-    y_constr = [func2(x) for x in X_in]
+    y = np.array([func(x) for x in X_in]).reshape(-1, 1)
+    y_constr = np.array([func2(x) for x in X_in]).reshape(-1, 1)
     X_in = X_in.reshape(-1, 1)
-
     X_out = np.arange(0, 1, 0.001).reshape(-1, 1)
+
+    scaled_y = bo.preprocess_outputs(y)
+    scaled_y_constr = bo.preprocess_outputs(y_constr)
+    scaled_X_in = bo.preprocess_inputs(X_in, data_info)
+    scaled_X_out = bo.preprocess_inputs(X_out, data_info)
 
     X_test = np.arange(0, 1, 0.005)
     y_test = [func(x) for x in X_test]
     y_test_constr = [func2(x) for x in X_test]
 
 
-    diffs = bo.make_diff_list(X_in)
-    metric, lml = bo.optimal_metric(diffs, X_in, y, noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
-    metric_constr, lml = bo.optimal_metric(diffs, X_in, y_constr, noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
+    diffs = bo.make_diff_list(scaled_X_in)
+    metric, lml = bo.optimal_metric(diffs, scaled_X_in, scaled_y[:, 0], noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
+    metric_constr, lml = bo.optimal_metric(diffs, scaled_X_in, scaled_y_constr[:, 0], noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
 
     print(metric_constr, flush=True)
     np.set_printoptions(formatter={'float':"{0:0.3f}".format})
@@ -48,10 +52,13 @@ if __name__ == '__main__':
     print(K_constr, flush=True)
 
 
-    model = (K, y, metric)
-    pred, sigma = bo.predict(model, X_in, X_out)
-    model_constr = (K_constr, y_constr, metric_constr)
-    pred_constr, sigma_constr = bo.predict(model_constr, X_in, X_out)
+    model = (K, scaled_y[:, 0], metric)
+    scaled_pred, scaled_sigma = bo.predict(model, scaled_X_in, scaled_X_out)
+    model_constr = (K_constr, scaled_y_constr[:, 0], metric_constr)
+    scaled_pred_constr, scaled_sigma_constr = bo.predict(model_constr, scaled_X_in, scaled_X_out)
+
+    pred, sigma = bo.postprocess_output(scaled_pred, y[:, 0], scaled_sigma)
+    pred_constr, sigma_constr = bo.postprocess_output(scaled_pred_constr, y_constr[:, 0], scaled_sigma_constr)
 
     X_out = X_out.reshape(1, -1)[0]
 
