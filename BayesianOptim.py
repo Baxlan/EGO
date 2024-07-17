@@ -23,23 +23,32 @@ def check_data_info(x, data_info):
         raise Exception("\"data_info\" parameter length must be equal to the number of variables in the dataset")
     for i in range(len(data_info)):
         if type(data_info[i]) is not tuple and type(data_info[i]) is not list:
-            raise Exception("\"data_info\" elements must be tuples or lists." + str(i) + "th element is of type " + type(data_info[i]))
+            raise Exception("\"data_info\" elements must be tuples or lists." + str(i+1) + "th element is of type " + type(data_info[i]))
+        if len(data_info[i]) != 5:
+            raise Exception("The " + str(i+1) + "th variable information's length is different of 5")
         if type(data_info[i][0]) != str:
-            raise Exception("First data info must be of type str (name of the variable). Those of the " + str(i) + "th element is of type " + type(data_info[i][0]))
+            raise Exception("First data info must be of type str (name of the variable). Those of the " + str(i+1) + "th element is of type " + type(data_info[i][0]))
         if data_info[i][1] != "real"  and  data_info[i][1] != "discrete":
-            raise Exception("Second data info must be \"real\" or \"discrete\". If it is \"categorical\", the dummify_data_info() function must be used. The value of the " + str(i) + "th element is " + str(data_info[i][1]))
+            raise Exception("Second data info must be \"real\" or \"discrete\". If it is \"categorical\", the dummify_data_info() function must be used. The value of the " + str(i+1) + "th element is " + str(data_info[i][1]))
         if data_info[i][2] != "lin" and  data_info[i][2] != "log":
-            raise Exception("Third data info must be \"lin\" or \"log\". Those of the " + str(i) + "th element is " + str(data_info[i][2]))
+            raise Exception("Third data info must be \"lin\" or \"log\". Those of the " + str(i+1) + "th element is " + str(data_info[i][2]))
         if type(data_info[i][3]) is not list and type(data_info[i][3]) is not tuple:
-            raise Exception("Fourth data info must be of type list or tuple (boundaries of the variable). Those of the " + str(i) + "th element is of type " + type(data_info[i][3]))
+            raise Exception("Fourth data info must be of type list or tuple (boundaries of the variable). Those of the " + str(i+1) + "th element is of type " + type(data_info[i][3]))
         if len(data_info[i][3]) != 2:
-            raise Exception("Fourth data info length must be 2 (lower and upper boundaries of the variable). Those of the " + str(i) + "th element is " + str(len(data_info[i][3])))
+            raise Exception("Fourth data info length must be 2 (lower and upper boundaries of the variable). Those of the " + str(i+1) + "th element is " + str(len(data_info[i][3])))
         if data_info[i][3][0] >= data_info[i][3][1]:
-            raise Exception("Lower boundary of the " + str(i) + "th variable must be strictly inferior to its upper boundary")
+            raise Exception("Lower boundary of the " + str(i+1) + "th variable must be strictly inferior to its upper boundary")
         if data_info[i][2] == "log" and data_info[i][3][0] == 0:
-            raise Exception("Lower boundary of the " + str(i) + "th variable cannot be 0 because its scale is \"log\"")
+            raise Exception("Lower boundary of the " + str(i+1) + "th variable cannot be 0 because its scale is \"log\"")
         if data_info[i][2] == "log" and data_info[i][3][0] < 0 and data_info[i][3][1] > 0:
-            raise Exception("Boundaries of the " + str(i) + "th variable must be of the same sign because its scale is \"log\"")
+            raise Exception("Boundaries of the " + str(i+1) + "th variable must be of the same sign because its scale is \"log\"")
+        if data_info[i][4] < 0:
+            raise Exception("The relative uncertainty of the " + str(i+1) + "th variable cannot be inferior to 0")
+
+
+
+def check_outputs(y, output_info):
+    pass
 
 
 
@@ -259,11 +268,16 @@ def make_symmetric_matrix_from_list(vals):
 
 
 
-def make_diff_list(x):
+def make_diff_list(x, data_info, uncertainties=False):
     diffs = []
     for i in range(len(x)):
         for j in range(len(x)-i):
             diffs.append(x[i] - x[j+i])
+
+            if uncertainties:
+                for k in len(x[i]):
+                    diffs[len(diffs)-1][k] += data_info[k] * math.sqrt(x[i][k]**2 + x[j+i][k]**2)
+
 
     return np.array(diffs)
 
@@ -697,7 +711,7 @@ class BayesianOptimizer:
 
         self.seed += 1
         print("Calculating optimal metrics", flush=True)
-        diffs = make_diff_list(x)
+        diffs = make_diff_list(x, self.data_info, uncertainties=False)
 
         metrics = []
         kernels = []

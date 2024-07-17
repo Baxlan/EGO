@@ -9,9 +9,9 @@ import matplotlib.pyplot as plt
 
 # name, real or discrete, lin or log, bounds
 data_info = [
-    ["var1", "real", "log", [1, 100]],
-    ["var2", "real", "lin", [0.1, 100]],
-    ["var3", "real", "lin", [0.1, 100]]]
+    ["var1", "real", "log", [1, 100], 0],
+    ["var2", "real", "lin", [0.1, 100], 0],
+    ["var3", "real", "lin", [0.1, 100], 0]]
 
 
 
