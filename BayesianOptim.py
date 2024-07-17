@@ -463,44 +463,9 @@ def bound_combinations(bounds):
 
 
 
-def scale_points(points, data_info):
-    res = []
-    for i in range(len(points)):
-        res.append(scale_point(points[i], data_info))
-
-    return np.array(res)
-
-
-
-def scale_point(point, data_info):
-    for d in range(len(point)):
-        if data_info[d][2] == "log":
-            sign = 1
-            inf = data_info[d][3][0]
-            sup = data_info[d][3][1]
-            if data_info[d][3][0] < 0:
-                sign = -1
-                inf = -data_info[d][3][1]
-                sup = -data_info[d][3][0]
-
-            point[d] *= np.log(sup)
-            point[d] += np.log(inf)
-            point[d] = sign*np.exp(point[d])
-
-        else:
-            point[d] *= (data_info[d][3][1] - data_info[d][3][0])
-            point[d] += data_info[d][3][0]
-
-    return point
-
-
-
 def first_points(data_info, n, seed):
     points = random_points(data_info, n, seed)
-    points = scale_points(points, data_info)
     bounds = bound_combinations([[0,1] for i in range(len(data_info))])
-    bounds = scale_points(bounds, data_info)
-
     return np.vstack([bounds, points])
 
 
@@ -535,11 +500,11 @@ def next_points(models, x, data_info, constraints, n, seed, a, epsilon=1e-13, th
     results = {}
     pool = multiprocessing.Pool(threads)
     points = random_points(data_info, math.ceil(n/2), seed)
-    args = [(models, x, point, data_info, a, epsilon, constraints) for point in points]
+    args = [(models, x, point, a, epsilon, constraints) for point in points]
     res  = pool.map(find_max_ei_gradient, args)
 
     points = random_points(data_info, math.floor(n/2), seed+1)
-    args = [(models, x, point, data_info, a, epsilon, constraints, seed) for point in points]
+    args = [(models, x, point, a, epsilon, constraints, seed) for point in points]
     res2 = pool.map(find_max_ei_stochastic, args)
     pool.close()
 
@@ -612,7 +577,7 @@ def expected_improvement(y_mean, y_sigma, y_best, a, epsilon):
 def find_max_ei_gradient(args):
     response = sp.optimize.minimize( \
         fun=acquisition_function, x0=args[2], \
-        args=(args[0], args[1], args[4], args[5], args[6]), method="L-BFGS-B", \
+        args=(args[0], args[1], args[3], args[4], args[5]), method="L-BFGS-B", \
         bounds=[[0, 1] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
@@ -621,8 +586,8 @@ def find_max_ei_gradient(args):
 
 def find_max_ei_stochastic(args):
     response = sp.optimize.differential_evolution( \
-        func=acquisition_function, x0=args[2], seed=args[7], \
-        args=(args[0], args[1], args[4], args[5], args[6]), \
+        func=acquisition_function, x0=args[2], seed=args[6], \
+        args=(args[0], args[1], args[3], args[4], args[5]), \
         bounds=[[0, 1] for i in range(len(args[1][0]))])
 
     return (-response.fun, response.x)
