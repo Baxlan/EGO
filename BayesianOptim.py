@@ -5,6 +5,10 @@ import scipy as sp
 import multiprocessing
 import warnings
 import copy
+import plotly.graph_objects as go
+import seaborn
+import pandas as pa
+import matplotlib.pyplot as plt
 
 
 
@@ -652,6 +656,61 @@ def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
 
 # =================================================================
 # =================================================================
+# ============================ PLOT ===============================
+# =================================================================
+# =================================================================
+
+
+
+def parallelPlot(x, y, data_info, output_info):
+    all_data = np.hstack([x, y])
+    all_labels = np.hstack([[data_info[i][0] for i in range(len(data_info))], [output_info[i][0] for i in range(len(output_info))]])
+    all_scales = np.hstack([[data_info[i][2] for i in range(len(data_info))], [output_info[i][1] for i in range(len(output_info))]])
+    dimensions = []
+
+    # next block is for log-scaling log scaled variables because plotly doesn't support it trivialy
+    for i in range(len(all_labels)):
+        data = all_data[:,i]
+        if all_scales[i] == "log":
+            for j in range(len(data)):
+                data[j] = math.log(data[j])
+            ticks = [max(data)*i/10 for i in range(11)]
+            text = [format(math.exp(ticks[i]), "1.2E") for i in range(len(ticks))]
+            d = dict(label=all_labels[i], values = data, tickvals=ticks, ticktext=text)
+        else:
+            d = dict(label=all_labels[i], values = data)
+
+        dimensions.append(d)
+
+    fig = go.Figure(data=go.Parcoords(dimensions=dimensions))
+    fig.show()
+
+
+
+def pairPlot(x, y, data_info, output_info):
+    all_data = pa.DataFrame(np.hstack([x, y]))
+    all_labels = np.hstack([[data_info[i][0] for i in range(len(data_info))], [output_info[i][0] for i in range(len(output_info))]])
+    all_data.columns = all_labels
+    all_scales = np.hstack([[data_info[i][2] for i in range(len(data_info))], [output_info[i][1] for i in range(len(output_info))]])
+
+    log_labels = []
+    for i in range(len(all_labels)):
+        if all_scales[i] == "log":
+            log_labels.append(all_labels[i])
+
+    fig = seaborn.pairplot(all_data, y_vars=[output_info[i][0] for i in range(len(output_info))], x_vars=[data_info[i][0] for i in range(len(data_info))])
+    for ax in fig.axes.flat:
+        if ax.get_xlabel() in log_labels:
+            ax.set(xscale="log")
+        if ax.get_ylabel() in log_labels:
+            ax.set(yscale="log")
+
+    plt.show()
+
+
+
+# =================================================================
+# =================================================================
 # ============= BAYESIAN OPTIMIZATION CLASS =======================
 # =================================================================
 # =================================================================
@@ -741,3 +800,12 @@ class BayesianOptimizer:
         self.kernel = kernels[0]
         self.metric = metrics[0]
         return postprocess_inputs(next_pts, self.dummy_data_info)
+    
+    
+    def save(self):
+        pass
+    
+    def load(self):
+        pass
+    
+    

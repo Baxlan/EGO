@@ -14,6 +14,9 @@ data_info = [
     ["var3", "real", "lin", [0.1, 100], 0]]
 
 
+output_info = [
+    ["output", "lin"]]
+
 
 def func(x):
     a = math.sin(x[0]) + math.cos(x[1])
@@ -39,7 +42,7 @@ if __name__ == '__main__':
     random.seed(0)
 
     if True:
-        X_in = bo.first_points(data_info, 20, 0)
+        X_in = bo.first_points(data_info, 30, 1)
         X_in = bo.postprocess_inputs(X_in, data_info)
     else:
         X_in = []
@@ -48,15 +51,11 @@ if __name__ == '__main__':
         X_in = np.array(X_in)
 
     y = np.array([func3(x) for x in X_in]).reshape(-1, 1)
-    print(np.hstack([X_in, y]), flush=True)
 
     # test BayesianOptimiser class
     optimizer = bo.BayesianOptimizer("test", noise=[0], data_info=data_info, constraints=[], iso="aniso", seed=32, threads=7)
     optimizer.add_data(X_in, y)
     a = 5
-    next_points = optimizer.next_points(n=10, a=a)
-    print(next_points, flush=True)
-
 
 
     # PLOT
@@ -71,21 +70,5 @@ if __name__ == '__main__':
     scaled_X_in = bo.preprocess_inputs(X_in, data_info)
     scaled_y = bo.preprocess_outputs(y)
 
-    model = [optimizer.kernel, scaled_y[:, 0], optimizer.metric]
-    scaled_y_pred, scaled_y_sigma = bo.predict(model, scaled_X_in, scaled_X_plot)
-    ei = bo.expected_improvement(scaled_y_pred, scaled_y_sigma, max(scaled_y_pred), a=a, epsilon=1e-13)
-    y_pred, y_sigma = bo.postprocess_output(scaled_y_pred, y[:, 0], scaled_y_sigma)
-
-    fig, ax1 = plt.subplots()
-    ax1.plot(X_plot[:, 2], y_pred, label="Surrogate", c="blue")
-    ax1.fill(np.hstack([X_plot[:, 2], X_plot[:, 2][::-1]]), np.hstack([y_pred - a * y_sigma, (y_pred + a * y_sigma)[::-1]]), alpha = 0.5, fc = "b")
-    ax1.plot(X_plot[:, 2], y_test, label="True function", c="black")
-
-    ax2 = ax1.twinx()
-    ax2.plot(X_plot[:, 2], ei, label="Expected improvement", c="red")
-
-    lines, labels = ax1.get_legend_handles_labels()
-    lines2, labels2 = ax2.get_legend_handles_labels()
-    ax2.legend(lines + lines2, labels + labels2, loc=0)
-    plt.grid()
-    plt.show()
+    bo.parallelPlot(X_in, y, data_info, output_info)
+    #bo.pairPlot(X_in, y, data_info, output_info)
