@@ -3,13 +3,15 @@ import math
 import BayesianOptim as bo
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pa
 
 
 
 # name, real or discrete, lin or log, bounds
-data_info = [
+input_info = [
     ["var1", "real", "lin", [0, 1]]]
 
+input_info_df = pa.DataFrame(input_info, columns=["name", "type", "scale", "inf_bound", "sup_bound", "rel_sigma"])
 
 
 def func(x):
@@ -28,9 +30,9 @@ if __name__ == '__main__':
     X_test = np.arange(0, 1, 0.005)
     y_test = [func(x) for x in X_test]
 
-    scaled_X_in = bo.preprocess_inputs(X_in, data_info)
+    scaled_X_in = bo.preprocess_inputs(X_in, input_info)
     scaled_y = bo.preprocess_outputs(y)
-    scaled_X_out = bo.preprocess_inputs(X_out, data_info)
+    scaled_X_out = bo.preprocess_inputs(X_out, input_info)
 
     diffs = bo.make_diff_list(scaled_X_in)
     metric, lml = bo.optimal_metric(diffs, scaled_X_in, scaled_y[:, 0], noise=0, bounds=[-12, 12], iso="iso", seed=32, threads=6)
@@ -65,7 +67,7 @@ if __name__ == '__main__':
     ax2 = ax1.twinx()
     ax2.plot(X_out, ei, label="expected improvement", c="cyan")
 
-    next_pt = bo.next_points([model], scaled_X_in, data_info, constraints=[], n=10, seed=32, a=a, threads=6)
+    next_pt = bo.next_points([model], scaled_X_in, input_info, constraints=[], n=10, seed=32, a=a, threads=6)
     X2_in = list(next_pt.values())[0][0]
     y2 = func(X2_in)
     ax1.scatter(X2_in, y2, label="next point", c="red", s=60)

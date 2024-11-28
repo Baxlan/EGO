@@ -20,79 +20,111 @@ import matplotlib.pyplot as plt
 
 
 
-def check_data_info(x, data_info):
-    if type(data_info) is not list:
-        raise Exception("\"data_info\" parameter must be a list")
-    if len(data_info) is not len(x[0]):
-        raise Exception("\"data_info\" parameter length must be equal to the number of variables in the dataset")
-    for i in range(len(data_info)):
-        if type(data_info[i]) is not tuple and type(data_info[i]) is not list:
-            raise Exception("\"data_info\" elements must be tuples or lists." + str(i+1) + "th element is of type " + type(data_info[i]))
-        if len(data_info[i]) != 5:
-            raise Exception("The " + str(i+1) + "th variable information's length is different of 5")
-        if type(data_info[i][0]) != str:
-            raise Exception("First data info must be of type str (name of the variable). Those of the " + str(i+1) + "th element is of type " + type(data_info[i][0]))
-        if data_info[i][1] != "real"  and  data_info[i][1] != "discrete":
-            raise Exception("Second data info must be \"real\" or \"discrete\". If it is \"categorical\", the dummify_data_info() function must be used. The value of the " + str(i+1) + "th element is " + str(data_info[i][1]))
-        if data_info[i][2] != "lin" and  data_info[i][2] != "log":
-            raise Exception("Third data info must be \"lin\" or \"log\". Those of the " + str(i+1) + "th element is " + str(data_info[i][2]))
-        if type(data_info[i][3]) is not list and type(data_info[i][3]) is not tuple:
-            raise Exception("Fourth data info must be of type list or tuple (boundaries of the variable). Those of the " + str(i+1) + "th element is of type " + type(data_info[i][3]))
-        if len(data_info[i][3]) != 2:
-            raise Exception("Fourth data info length must be 2 (lower and upper boundaries of the variable). Those of the " + str(i+1) + "th element is " + str(len(data_info[i][3])))
-        if data_info[i][3][0] >= data_info[i][3][1]:
-            raise Exception("Lower boundary of the " + str(i+1) + "th variable must be strictly inferior to its upper boundary")
-        if data_info[i][2] == "log" and data_info[i][3][0] == 0:
-            raise Exception("Lower boundary of the " + str(i+1) + "th variable cannot be 0 because its scale is \"log\"")
-        if data_info[i][2] == "log" and data_info[i][3][0] < 0 and data_info[i][3][1] > 0:
-            raise Exception("Boundaries of the " + str(i+1) + "th variable must be of the same sign because its scale is \"log\"")
-        if data_info[i][4] < 0:
-            raise Exception("The relative uncertainty of the " + str(i+1) + "th variable cannot be inferior to 0")
+def check_input_info(df : pa.DataFrame) -> None:
+    if "name" not in df.columns:
+        raise Exception("\"name\" column is missing in input_info")
+    if "type" not in df.columns:
+        raise Exception("\"type\" column is missing in input_info")
+    if "scale" not in df.columns:
+        raise Exception("\"scale\" column is missing in input_info")
+    if "bounds" not in df.columns:
+        raise Exception("\"bounds\" column is missing in input_info")
+
+    for i in range(len(df)):
+        if type(df.loc[i, "name"]) is not str:
+            raise Exception(str(i+1) + "th \"name\" in input_info must be a string")
+        if "~" in df.loc[i, "name"]:
+            raise Exception(str(i+1) + "th \"name\" in input_info contains a \"~\", which is forbidden")
+        if df.loc[i, "type"] != "real" and df.loc[i, "type"] != "discrete" and df.loc[i, "type"] != "categorical":
+            raise Exception(str(i+1) + "th \"type\" in input_info must be \"real\", \"discrete\" or \"categorical\"")
+        if type(df.loc[i, "bounds"]) != list and type(df.loc[i, "bounds"]) != tuple:
+            raise Exception(str(i+1) + "th bounds in input_info must be a list or a tuple")
+
+        if df.loc[i, "type"] == "categorical":
+            if df.loc[i, "scale"] != "none":
+                raise Exception(str(i+1) + "th \"scale\" in input_info must be \"none\", because its type is \"categorical\"")
+            if len(df.loc[i, "bounds"]) <= 1:
+                raise Exception(str(i+1) + "th \"bounds\" length must be at least 2")
+            for j in range(len(df.loc[i, "bounds"])):
+                if type(df.loc[i, "bounds"][j]) != str:
+                    raise Exception(str(i+1) + "th \"bounds\"/"+ str(j+1) +"th item must be a string because its type is \"categorical\"")
+                if "~" in df.loc[i, "bounds"][j]:
+                    raise Exception(str(i+1) + "th \"bounds\" in input_info contains a \"~\", which is forbidden")
+
+        if df.loc[i, "type"] != "categorical":
+            if df.loc[i, "scale"] == "none":
+                raise Exception(str(i+1) + "th \"scale\" in input_info cannot be \"none\", because its type is \"real\" or \"discrete\"")
+            if len(df.loc[i, "bounds"]) != 2:
+                raise Exception(str(i+1) + "th \"bounds\" length must be exaclty 2")
+            for j in range(2):
+                if type (df.loc[i, "bounds"][j]) != float and type(df.loc[i, "bounds"][j]) != int:
+                    raise Exception(str(i+1) + "th \"bounds\"/"+ str(j+1) +"th item must be a floa or an integer")
+            if df.loc[i, "bounds"][0] >= df.loc[i, "bounds"][1]:
+                raise Exception("Lower boundary of the " + str(i+1) + "th variable must be strictly inferior to its upper boundary")
+            if df.loc[i, "scale"] == "log" and (df.loc[i, "bounds"][0] == 0 or df.loc[i, "bounds"][1] == 0):
+                raise Exception("Boundaries of the " + str(i+1) + "th variable cannot be 0 because its scale is \"log\"")
+            if df.loc[i, "scale"] == "log" and df.loc[i, "bounds"][0] < 0 and df.loc[i, "bounds"][1] > 0:
+                raise Exception("Boundaries of the " + str(i+1) + "th variable must be of the same sign because its scale is \"log\"")
 
 
 
-def check_outputs(y, output_info):
+def check_output_info(df : pa.DataFrame) -> None:
     pass
 
 
 
-def dummify_data_info(data_info):
-    new_data_info = []
-    for i in range(len(data_info)):
-        if data_info[i][1] == "real" or data_info[i][1] == "discrete":
-            new_data_info.append(data_info[i])
-
-        elif data_info[i][1] == "categorical":
-            for j in range(len(data_info[3])):
-                if type(data_info[3][j]) != str:
-                    raise Exception("Categories of categorical variables must be str")
-
-                new_data_info.append([data_info[0] + "~" + data_info[3][j], "real", "lin", [0, 1]])
-        else:
-            raise Exception("Second data_info must be \"real\", \"discrete\" or \"categorical\". The value of the " + str(i) + "th element is " + str(data_info[i][1]))
-    return new_data_info
+def check_outputs(y, output_info) -> None: # set argument types
+    pass
 
 
 
-def categorify_and_discretize_data(x, data_info):
+def dummify_input_info(df : pa.DataFrame) -> pa.DataFrame:
+    new_input_info = []
+
+    for i in range(len(df)):
+        if df.loc[i, "type"] == "real" or df.loc[i, "type"] == "discrete":
+            new_input_info.append(df.loc[i].to_dict())
+
+        else: #if "type" == "categorical"
+            for j in range(len(df.loc[i, "bounds"])-1):
+                new_input_info.append({"name":df.loc[i, "name"] + "~" + str(j+1), "type":"real", "scale":"lin", "bounds":[0, 1]})
+
+    return pa.DataFrame(new_input_info)
+
+
+
+def spherical_to_cartesian(spherical_coords : list) -> list:
+    N = len(spherical_coords) + 1
+    cartesian_coords = np.zeros(N)
+    cartesian_coords[0] = np.cos(spherical_coords[0])
+
+    for i in range(1, N-1):
+        cartesian_coords[i] = np.cos(spherical_coords[i]) * np.prod(np.sin(spherical_coords[:i]))
+
+    cartesian_coords[N-1] = np.prod(np.sin(spherical_coords))
+    return cartesian_coords
+
+
+
+def categorify_and_discretize_data(x : pa.DataFrame, input_info : pa.DataFrame) -> pa.DataFrame:
     out = []
 
     for data in x:
         out.append([])
         skipper = 0
-        for i in range(len(data_info)):
-            if data_info[i][1] == "categorical":
+        for i in range(len(input_info)):
+            if input_info[i][1] == "categorical":
                 category = ""
                 val = -1
-                for j in range(len(data_info[i][3])):
-                    if data[i+skipper] > val:
-                        category = data_info[i][3][j]
+                for j in range(len(input_info[i][3])):
+                    if data[i+skipper] > val: # bad method. How to get distance to an axis ?
+                        category = input_info[i][3][j]
                         val = data[i+skipper]
                     skipper += 1
                 skipper -= 1
                 out[len(out)-1].append(category)
 
-            elif data_info[i][1] == "discrete":
+            elif input_info[i][1] == "discrete":
                 out[len(out)-1].append(round(data[i+skipper]))
 
             else:
@@ -101,21 +133,21 @@ def categorify_and_discretize_data(x, data_info):
 
 
 
-def preprocess_inputs(x, data_info):
-    check_data_info(x, data_info)
+def preprocess_inputs(x, input_info):
+    check_input_info(input_info)
     inp = copy.deepcopy(x)
 
-    for i in range(len(data_info)):
+    for i in range(len(input_info)):
 
         # linearize log scaled variables
-        if data_info[i][2] == "log":
+        if input_info[i][2] == "log":
             sign = 1
-            inf = data_info[i][3][0]
-            sup = data_info[i][3][1]
-            if data_info[i][3][0] < 0:
+            inf = input_info[i][3][0]
+            sup = input_info[i][3][1]
+            if input_info[i][3][0] < 0:
                 sign = -1
-                inf = -data_info[i][3][1]
-                sup = -data_info[i][3][0]
+                inf = -input_info[i][3][1]
+                sup = -input_info[i][3][0]
             inp[:, i] = np.log(sign*inp[:, i])
 
             # normalize log variables
@@ -124,8 +156,8 @@ def preprocess_inputs(x, data_info):
 
         # normalize non log variables
         else:
-            inp[:, i] -= data_info[i][3][0]
-            inp[:, i] /= (data_info[i][3][1] - data_info[i][3][0])
+            inp[:, i] -= input_info[i][3][0]
+            inp[:, i] /= (input_info[i][3][1] - input_info[i][3][0])
 
     return inp
 
@@ -146,19 +178,19 @@ def preprocess_outputs(y):
 
 
 
-def postprocess_inputs(scaled_x, data_info):
-    check_data_info(scaled_x, data_info)
+def postprocess_inputs(scaled_x, input_info):
+    check_data_info(scaled_x, input_info)
     inp = copy.deepcopy(scaled_x)
 
-    for i in range(len(data_info)):
-        if data_info[i][2] == "log":
+    for i in range(len(input_info)):
+        if input_info[i][2] == "log":
             sign = 1
-            inf = data_info[i][3][0]
-            sup = data_info[i][3][1]
-            if data_info[i][3][0] < 0:
+            inf = input_info[i][3][0]
+            sup = input_info[i][3][1]
+            if input_info[i][3][0] < 0:
                 sign = -1
-                inf = -data_info[i][3][1]
-                sup = -data_info[i][3][0]
+                inf = -input_info[i][3][1]
+                sup = -input_info[i][3][0]
 
             # denormalize log variables
             inp[:, i] *= np.log(sup)
@@ -168,8 +200,8 @@ def postprocess_inputs(scaled_x, data_info):
 
         # denormalize non log variables
         else:
-            inp[:, i] *= (data_info[i][3][1]-data_info[i][3][0])
-            inp[:, i] += data_info[i][3][0]
+            inp[:, i] *= (input_info[i][3][1]-input_info[i][3][0])
+            inp[:, i] += input_info[i][3][0]
 
     return inp
 
@@ -272,7 +304,7 @@ def make_symmetric_matrix_from_list(vals):
 
 
 
-def make_diff_list(x, data_info, uncertainties=False):
+def make_diff_list(x, input_info, uncertainties=False):
     diffs = []
     for i in range(len(x)):
         for j in range(len(x)-i):
@@ -280,7 +312,7 @@ def make_diff_list(x, data_info, uncertainties=False):
 
             if uncertainties:
                 for k in len(x[i]):
-                    diffs[len(diffs)-1][k] += data_info[k] * math.sqrt(x[i][k]**2 + x[j+i][k]**2)
+                    diffs[len(diffs)-1][k] += input_info[k] * math.sqrt(x[i][k]**2 + x[j+i][k]**2)
 
 
     return np.array(diffs)
@@ -481,17 +513,17 @@ def bound_combinations(bounds):
 
 
 
-def first_points(data_info, n, seed):
-    points = random_points(data_info, n, seed)
-    bounds = bound_combinations([[0,1] for i in range(len(data_info))])
+def first_points(input_info, n, seed):
+    points = random_points(input_info, n, seed)
+    bounds = bound_combinations([[0,1] for i in range(len(input_info))])
     return np.vstack([bounds, points])
 
 
 
-def random_points(data_info, n, seed):
-    check_data_info([np.ones(len(data_info))], data_info)
+def random_points(input_info, n, seed):
+    check_data_info([np.ones(len(input_info))], input_info)
     m = math.ceil(math.log(n)/math.log(2))
-    points_generator = sp.stats.qmc.Sobol(d=len(data_info), seed=seed)
+    points_generator = sp.stats.qmc.Sobol(d=len(input_info), seed=seed)
     points = points_generator.random_base2(m=m)[:n]
     return points
 
@@ -514,14 +546,14 @@ def predict(model, x, x_new):
 
 
 
-def next_points(models, x, data_info, constraints, n, seed, a, epsilon=1e-13, threads=1):
+def next_points(models, x, input_info, constraints, n, seed, a, epsilon=1e-13, threads=1):
     results = {}
     pool = multiprocessing.Pool(threads)
-    points = random_points(data_info, math.ceil(n/2), seed)
+    points = random_points(input_info, math.ceil(n/2), seed)
     args = [(models, x, point, a, epsilon, constraints) for point in points]
     res  = pool.map(find_max_ei_gradient, args)
 
-    points = random_points(data_info, math.floor(n/2), seed+1)
+    points = random_points(input_info, math.floor(n/2), seed+1)
     args = [(models, x, point, a, epsilon, constraints, seed) for point in points]
     res2 = pool.map(find_max_ei_stochastic, args)
     pool.close()
@@ -662,10 +694,10 @@ def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
 
 
 
-def parallelPlot(x, y, data_info, output_info):
+def parallelPlot(x, y, input_info, output_info):
     all_data = np.hstack([x, y])
-    all_labels = np.hstack([[data_info[i][0] for i in range(len(data_info))], [output_info[i][0] for i in range(len(output_info))]])
-    all_scales = np.hstack([[data_info[i][2] for i in range(len(data_info))], [output_info[i][1] for i in range(len(output_info))]])
+    all_labels = np.hstack([[input_info[i][0] for i in range(len(input_info))], [output_info[i][0] for i in range(len(output_info))]])
+    all_scales = np.hstack([[input_info[i][2] for i in range(len(input_info))], [output_info[i][1] for i in range(len(output_info))]])
     dimensions = []
 
     # next block is for log-scaling log scaled variables because plotly doesn't support it trivialy
@@ -687,18 +719,18 @@ def parallelPlot(x, y, data_info, output_info):
 
 
 
-def pairPlot(x, y, data_info, output_info):
+def pairPlot(x, y, input_info, output_info):
     all_data = pa.DataFrame(np.hstack([x, y]))
-    all_labels = np.hstack([[data_info[i][0] for i in range(len(data_info))], [output_info[i][0] for i in range(len(output_info))]])
+    all_labels = np.hstack([[input_info[i][0] for i in range(len(input_info))], [output_info[i][0] for i in range(len(output_info))]])
     all_data.columns = all_labels
-    all_scales = np.hstack([[data_info[i][2] for i in range(len(data_info))], [output_info[i][1] for i in range(len(output_info))]])
+    all_scales = np.hstack([[input_info[i][2] for i in range(len(input_info))], [output_info[i][1] for i in range(len(output_info))]])
 
     log_labels = []
     for i in range(len(all_labels)):
         if all_scales[i] == "log":
             log_labels.append(all_labels[i])
 
-    fig = seaborn.pairplot(all_data, y_vars=[output_info[i][0] for i in range(len(output_info))], x_vars=[data_info[i][0] for i in range(len(data_info))])
+    fig = seaborn.pairplot(all_data, y_vars=[output_info[i][0] for i in range(len(output_info))], x_vars=[input_info[i][0] for i in range(len(input_info))])
     for ax in fig.axes.flat:
         if ax.get_xlabel() in log_labels:
             ax.set(xscale="log")
@@ -718,13 +750,13 @@ def pairPlot(x, y, data_info, output_info):
 
 
 class BayesianOptimizer:
-    def __init__(self, title, noise, data_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
+    def __init__(self, title, noise, input_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
         if np.array(noise).size != len(constraints)+1:
             raise Exception("Noise length must have same length than constraint one + 1 (ie: " + str(len(constraints)+1) + "). " + str(len(noise)) + " provided")
         self.title = title
         self.noise = noise
-        self.data_info = data_info
-        self.dummy_data_info = dummify_data_info(data_info)
+        self.input_info = input_info
+        self.dummy_data_info = dummify_data_info(input_info)
         self.constraints = constraints
         self.seed = seed
         self.threads = threads
@@ -758,19 +790,19 @@ class BayesianOptimizer:
 
     def first_points(self, n):
         self.seed += 1
-        return first_points(self.data_info, n, self.seed)
+        return first_points(self.input_info, n, self.seed)
 
 
 
     def next_points(self, n, a, metric_bounds=[-12, 12]):
-        x = preprocess_inputs(self.x, self.data_info)
+        x = preprocess_inputs(self.x, self.input_info)
         y = preprocess_outputs(self.y)
 
         print(np.hstack([x, y]), flush=True)
 
         self.seed += 1
         print("Calculating optimal metrics", flush=True)
-        diffs = make_diff_list(x, self.data_info, uncertainties=False)
+        diffs = make_diff_list(x, self.input_info, uncertainties=False)
 
         metrics = []
         kernels = []
