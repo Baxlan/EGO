@@ -37,8 +37,8 @@ def check_input_info(df : pa.DataFrame) -> None:
             raise Exception(str(i+1) + "th \"name\" in input_info contains a \"~\", which is forbidden")
         if df.loc[i, "type"] != "real" and df.loc[i, "type"] != "discrete" and df.loc[i, "type"] != "categorical":
             raise Exception(str(i+1) + "th \"type\" in input_info must be \"real\", \"discrete\" or \"categorical\"")
-        if type(df.loc[i, "bounds"]) != list and type(df.loc[i, "bounds"]) != tuple:
-            raise Exception(str(i+1) + "th bounds in input_info must be a list or a tuple")
+        if type(df.loc[i, "bounds"]) != list:
+            raise Exception(str(i+1) + "th bounds in input_info must be a list")
 
         if df.loc[i, "type"] == "categorical":
             if df.loc[i, "scale"] != "none":
@@ -107,29 +107,33 @@ def spherical_to_cartesian(spherical_coords : list) -> list:
 
 
 def categorify_and_discretize_data(x : pa.DataFrame, input_info : pa.DataFrame) -> pa.DataFrame:
-    out = []
+    names = list(input_info["name"])
+    output = pa.DataFrame(columns=names)
 
-    for data in x:
-        out.append([])
-        skipper = 0
-        for i in range(len(input_info)):
-            if input_info[i][1] == "categorical":
-                category = ""
-                val = -1
-                for j in range(len(input_info[i][3])):
-                    if data[i+skipper] > val: # bad method. How to get distance to an axis ?
-                        category = input_info[i][3][j]
-                        val = data[i+skipper]
-                    skipper += 1
-                skipper -= 1
-                out[len(out)-1].append(category)
+    for i in range(len(x)):
+        new_row = {}
+        for j in range(len(names)):
 
-            elif input_info[i][1] == "discrete":
-                out[len(out)-1].append(round(data[i+skipper]))
+            if input_info.loc[j, "type"] == "categorical":
+                angles = []
 
+                for k in range(1, len(input_info.loc[j, "bounds"])):
+                    angles.append(x.loc[i, names[j]+"~"+str(k)]*math.pi/2)
+                coords = spherical_to_cartesian(angles)
+
+                dist = []
+                for a in range(len(coords)):
+                    category = np.zeros(len(coords))
+                    category[a] = 1
+                    dist.append(math.dist(coords, category))
+                new_row[names[j]] = input_info.loc[j, "bounds"][dist.index(min(dist))]
+
+            elif input_info.loc[j, "type"] == "discrete":
+                new_row[names[j]] = round(x.loc[i, names[j]])
             else:
-                out[len(out)-1].append(data[i+skipper])
-    return out
+                new_row[names[j]] = x.loc[i, names[j]]
+        output.loc[len(output)] = new_row
+    return output
 
 
 
