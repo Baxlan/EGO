@@ -94,14 +94,20 @@ def dummify_input_info(df : pa.DataFrame) -> pa.DataFrame:
 
 
 def spherical_to_cartesian(spherical_coords : list) -> list:
-    N = len(spherical_coords) + 1
+    """
+    It is assumed that all the arguments (except the last one) are cosines of the polar angles.
+    while the last argument is the normalized angle [0, 1] of the azimuth.
+    """
+    angles = [math.acos(spherical_coords[i]) for i in range(len(spherical_coords)-1)] + [spherical_coords[-1]*math.pi/2]
+
+    N = len(angles) + 1
     cartesian_coords = np.zeros(N)
-    cartesian_coords[0] = np.cos(spherical_coords[0])
+    cartesian_coords[0] = np.cos(angles[0])
 
     for i in range(1, N-1):
-        cartesian_coords[i] = np.cos(spherical_coords[i]) * np.prod(np.sin(spherical_coords[:i]))
+        cartesian_coords[i] = np.cos(angles[i]) * np.prod(np.sin(angles[:i]))
 
-    cartesian_coords[N-1] = np.prod(np.sin(spherical_coords))
+    cartesian_coords[N-1] = np.prod(np.sin(angles))
     return cartesian_coords
 
 
@@ -118,7 +124,7 @@ def categorify_and_discretize_data(x : pa.DataFrame, input_info : pa.DataFrame) 
                 angles = []
 
                 for k in range(1, len(input_info.loc[j, "bounds"])):
-                    angles.append(x.loc[i, names[j]+"~"+str(k)]*math.pi/2)
+                    angles.append(x.loc[i, names[j]+"~"+str(k)])
                 coords = spherical_to_cartesian(angles)
 
                 dist = []
