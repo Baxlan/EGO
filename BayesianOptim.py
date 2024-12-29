@@ -20,76 +20,114 @@ import matplotlib.pyplot as plt
 
 
 
-def check_input_info(df : pa.DataFrame) -> None:
-    if "name" not in df.columns:
+def check_input_info(input_info : pa.DataFrame) -> None:
+    if "name" not in input_info.columns:
         raise Exception("\"name\" column is missing in input_info")
-    if "type" not in df.columns:
+    if "type" not in input_info.columns:
         raise Exception("\"type\" column is missing in input_info")
-    if "scale" not in df.columns:
+    if "scale" not in input_info.columns:
         raise Exception("\"scale\" column is missing in input_info")
-    if "bounds" not in df.columns:
+    if "bounds" not in input_info.columns:
         raise Exception("\"bounds\" column is missing in input_info")
 
-    for i in range(len(df)):
-        if type(df.loc[i, "name"]) is not str:
+    for i in range(len(input_info)):
+        if type(input_info.loc[i, "name"]) is not str:
             raise Exception(str(i+1) + "th \"name\" in input_info must be a string")
-        if "~" in df.loc[i, "name"]:
+        if "~" in input_info.loc[i, "name"]:
             raise Exception(str(i+1) + "th \"name\" in input_info contains a \"~\", which is forbidden")
-        if df.loc[i, "type"] != "real" and df.loc[i, "type"] != "discrete" and df.loc[i, "type"] != "categorical":
+        if input_info.loc[i, "type"] != "real" and input_info.loc[i, "type"] != "discrete" and input_info.loc[i, "type"] != "categorical":
             raise Exception(str(i+1) + "th \"type\" in input_info must be \"real\", \"discrete\" or \"categorical\"")
-        if type(df.loc[i, "bounds"]) != list:
+        if type(input_info.loc[i, "bounds"]) != list:
             raise Exception(str(i+1) + "th bounds in input_info must be a list")
 
-        if df.loc[i, "type"] == "categorical":
-            if df.loc[i, "scale"] != "none":
+        if input_info.loc[i, "type"] == "categorical":
+            if input_info.loc[i, "scale"] != "none":
                 raise Exception(str(i+1) + "th \"scale\" in input_info must be \"none\", because its type is \"categorical\"")
-            if len(df.loc[i, "bounds"]) <= 1:
+            if len(input_info.loc[i, "bounds"]) <= 1:
                 raise Exception(str(i+1) + "th \"bounds\" length must be at least 2")
-            for j in range(len(df.loc[i, "bounds"])):
-                if type(df.loc[i, "bounds"][j]) != str:
+            for j in range(len(input_info.loc[i, "bounds"])):
+                if type(input_info.loc[i, "bounds"][j]) != str:
                     raise Exception(str(i+1) + "th \"bounds\"/"+ str(j+1) +"th item must be a string because its type is \"categorical\"")
-                if "~" in df.loc[i, "bounds"][j]:
+                if "~" in input_info.loc[i, "bounds"][j]:
                     raise Exception(str(i+1) + "th \"bounds\" in input_info contains a \"~\", which is forbidden")
 
-        if df.loc[i, "type"] != "categorical":
-            if df.loc[i, "scale"] == "none":
+        if input_info.loc[i, "type"] != "categorical":
+            if input_info.loc[i, "scale"] == "none":
                 raise Exception(str(i+1) + "th \"scale\" in input_info cannot be \"none\", because its type is \"real\" or \"discrete\"")
-            if len(df.loc[i, "bounds"]) != 2:
+            if len(input_info.loc[i, "bounds"]) != 2:
                 raise Exception(str(i+1) + "th \"bounds\" length must be exaclty 2")
             for j in range(2):
-                if type (df.loc[i, "bounds"][j]) != float and type(df.loc[i, "bounds"][j]) != int:
+                if type (input_info.loc[i, "bounds"][j]) != float and type(input_info.loc[i, "bounds"][j]) != int:
                     raise Exception(str(i+1) + "th \"bounds\"/"+ str(j+1) +"th item must be a floa or an integer")
-            if df.loc[i, "bounds"][0] >= df.loc[i, "bounds"][1]:
+            if input_info.loc[i, "bounds"][0] >= input_info.loc[i, "bounds"][1]:
                 raise Exception("Lower boundary of the " + str(i+1) + "th variable must be strictly inferior to its upper boundary")
-            if df.loc[i, "scale"] == "log" and (df.loc[i, "bounds"][0] == 0 or df.loc[i, "bounds"][1] == 0):
+            if input_info.loc[i, "scale"] == "log" and (input_info.loc[i, "bounds"][0] == 0 or input_info.loc[i, "bounds"][1] == 0):
                 raise Exception("Boundaries of the " + str(i+1) + "th variable cannot be 0 because its scale is \"log\"")
-            if df.loc[i, "scale"] == "log" and df.loc[i, "bounds"][0] < 0 and df.loc[i, "bounds"][1] > 0:
+            if input_info.loc[i, "scale"] == "log" and input_info.loc[i, "bounds"][0] < 0 and input_info.loc[i, "bounds"][1] > 0:
                 raise Exception("Boundaries of the " + str(i+1) + "th variable must be of the same sign because its scale is \"log\"")
 
 
 
-def check_output_info(df : pa.DataFrame) -> None:
-    pass
+def check_output_info(output_info : pa.DataFrame) -> None:
+    print("Nothing done")
 
 
 
-def check_outputs(y, output_info) -> None: # set argument types
-    pass
 
-
-
-def dummify_input_info(df : pa.DataFrame) -> pa.DataFrame:
+def dummify_input_info(input_info : pa.DataFrame) -> pa.DataFrame:
     new_input_info = []
 
-    for i in range(len(df)):
-        if df.loc[i, "type"] == "real" or df.loc[i, "type"] == "discrete":
-            new_input_info.append(df.loc[i].to_dict())
+    for i in range(len(input_info)):
+        if input_info.loc[i, "type"] == "real" or input_info.loc[i, "type"] == "discrete":
+            new_input_info.append(input_info.loc[i].to_dict())
 
         else: #if "type" == "categorical"
-            for j in range(len(df.loc[i, "bounds"])-1):
-                new_input_info.append({"name":df.loc[i, "name"] + "~" + str(j+1), "type":"real", "scale":"lin", "bounds":[0, 1]})
+            for j in range(len(input_info.loc[i, "bounds"])-1):
+                new_input_info.append({"name":input_info.loc[i, "name"] + "~" + str(j+1), "type":"real", "scale":"lin", "bounds":[0, 1]})
 
     return pa.DataFrame(new_input_info)
+
+
+
+def preprocess_outputs_and_info(outputs : pa.DataFrame, output_info : pa.DataFrame) -> pa.DataFrame:
+    out = copy.deepcopy(outputs)
+    out_info = copy.deepcopy(output_info)
+    out_info.index = out_info["name"]
+
+    # normalize outputs
+    for name in out.columns:
+        inf = np.min(out[name])
+        sup = np.max(out[name])
+        #linearize log scaled variables
+        if out_info.loc[name, "scale"] == "log":
+            sign = 1
+            if inf < 0:
+                sign = -1
+                inf, sup = -sup, -inf
+
+            out.loc[:, name] = np.log(sign*out.loc[:, name])
+
+            # normalize log variables
+            out.loc[:, name] -= np.log(inf)
+            out.loc[:, name] /= (np.log(sup) - np.log(inf))
+
+            if out_info.loc[name, "constraints"] != "none":
+                out_info.loc[name, "constraints"] = np.log(sign*out_info.loc[name, "constraints"])
+                out_info.loc[name, "constraints"] -= np.log(inf)
+                out_info.loc[name, "constraints"] /= (np.log(sup) - np.log(inf))
+                out_info.loc[name, "constraints"] = list(out_info.loc[name, "constraints"])
+
+
+        #normalize linear scaled variables
+        else:
+            out.loc[:, name] -= inf
+            out.loc[:, name] /= (sup - inf)
+            if out_info.loc[name, "constraints"] != "none":
+                out_info.loc[name, "constraints"] -= inf
+                out_info.loc[name, "constraints"] /= (sup-inf)
+                out_info.loc[name, "constraints"] = list(out_info.loc[name, "constraints"])
+
+    return out, out_info
 
 
 
@@ -112,155 +150,126 @@ def spherical_to_cartesian(spherical_coords : list) -> list:
 
 
 
-def categorify_and_discretize_data(x : pa.DataFrame, input_info : pa.DataFrame) -> pa.DataFrame:
-    names = list(input_info["name"])
-    output = pa.DataFrame(columns=names)
+def postprocess_inputs(dummy_inputs : pa.DataFrame, input_info : pa.DataFrame) -> pa.DataFrame:
+    inp = copy.deepcopy(dummy_inputs)
+    in_info = copy.deepcopy(input_info)
+    in_info.index = in_info["name"]
 
-    for i in range(len(x)):
+    # de-normalize normalized data
+    for name in inp.columns:
+        if "~" in name:
+            continue
+
+        inf = in_info.loc[name, "bounds"][0]
+        sup = in_info.loc[name, "bounds"][1]
+
+        if in_info.loc[name, "scale"] == "log":
+            sign = 1
+            inf = in_info.loc[name, "bounds"][0]
+            sup = in_info.loc[name, "bounds"][1]
+            if inf < 0:
+                sign = -1
+                inf, sup = -sup, -inf
+
+            # denormalize log scaled variables
+            inp.loc[:, name] *= (np.log(sup) - np.log(inf))
+            inp.loc[:, name] += np.log(inf)
+            # exponentiate log scaled variables
+            inp.loc[:, name] = sign*np.exp(inp.loc[:, name])
+
+        # denormalize linear scaled variables
+        else:
+            inp.loc[:, name] *= (sup-inf)
+            inp.loc[:, name] += inf
+
+
+    postprocessed_inputs = pa.DataFrame(columns=in_info["name"])
+
+    # categorify dummy data
+    for i in range(len(inp)):
         new_row = {}
-        for j in range(len(names)):
+        for name in in_info["name"]:
 
-            if input_info.loc[j, "type"] == "categorical":
-                angles = []
+            if in_info.loc[name, "type"] == "categorical":
+                cosines = []
 
-                for k in range(1, len(input_info.loc[j, "bounds"])):
-                    angles.append(x.loc[i, names[j]+"~"+str(k)])
-                coords = spherical_to_cartesian(angles)
+                for k in range(1, len(in_info.loc[name, "bounds"])):
+                    cosines.append(inp.loc[i, name+"~"+str(k)])
+                coords = spherical_to_cartesian(cosines)
 
                 dist = []
                 for a in range(len(coords)):
                     category = np.zeros(len(coords))
                     category[a] = 1
                     dist.append(math.dist(coords, category))
-                new_row[names[j]] = input_info.loc[j, "bounds"][dist.index(min(dist))]
+                new_row[name] = in_info.loc[name, "bounds"][dist.index(min(dist))]
 
-            elif input_info.loc[j, "type"] == "discrete":
-                new_row[names[j]] = round(x.loc[i, names[j]])
+            elif in_info.loc[name, "type"] == "discrete":
+                new_row[name] = round(inp.loc[i, name])
             else:
-                new_row[names[j]] = x.loc[i, names[j]]
-        output.loc[len(output)] = new_row
-    return output
+                new_row[name] = inp.loc[i, name]
+
+        postprocessed_inputs.loc[len(postprocessed_inputs)] = new_row
+    return postprocessed_inputs
 
 
 
-def preprocess_inputs(x, input_info):
-    check_input_info(input_info)
-    inp = copy.deepcopy(x)
+def postprocess_output(normalized_outputs : pa.DataFrame, outputs : pa.DataFrame, output_info : pa.DataFrame, normalized_sigma : pa.DataFrame = []):
+    out = copy.deepcopy(normalized_outputs)
+    sig = copy.deepcopy(normalized_sigma)
+    output_info.index = output_info["name"]
 
-    for i in range(len(input_info)):
+    for name in outputs.columns:
+        inf = np.min(outputs[name])
+        sup = np.max(outputs[name])
 
-        # linearize log scaled variables
-        if input_info[i][2] == "log":
+        if output_info.loc[name, "scale"] == "log":
             sign = 1
-            inf = input_info[i][3][0]
-            sup = input_info[i][3][1]
-            if input_info[i][3][0] < 0:
+            if inf < 0:
                 sign = -1
-                inf = -input_info[i][3][1]
-                sup = -input_info[i][3][0]
-            inp[:, i] = np.log(sign*inp[:, i])
+                inf, sup = -sup, -inf
 
-            # normalize log variables
-            inp[:, i] -= np.log(inf)
-            inp[:, i] /= np.log(sup)
-
-        # normalize non log variables
-        else:
-            inp[:, i] -= input_info[i][3][0]
-            inp[:, i] /= (input_info[i][3][1] - input_info[i][3][0])
-
-    return inp
-
-
-
-def preprocess_outputs(y):
-    out = np.array(copy.deepcopy(y))
-
-    # normalize outputs
-    for i in range(out.shape[1]):
-        min = np.min(out[:, i])
-        max = np.max(out[:, i])
-        out[:, i] -= min
-        out[:, i] /= (max - min)
-
-
-    return out
-
-
-
-def postprocess_inputs(scaled_x, input_info):
-    check_data_info(scaled_x, input_info)
-    inp = copy.deepcopy(scaled_x)
-
-    for i in range(len(input_info)):
-        if input_info[i][2] == "log":
-            sign = 1
-            inf = input_info[i][3][0]
-            sup = input_info[i][3][1]
-            if input_info[i][3][0] < 0:
-                sign = -1
-                inf = -input_info[i][3][1]
-                sup = -input_info[i][3][0]
-
-            # denormalize log variables
-            inp[:, i] *= np.log(sup)
-            inp[:, i] += np.log(inf)
+            # denormalize log scaled variables
+            out.loc[:, name] *= (np.log(sup)-np.log(inf))
+            out.loc[:, name] += np.log(inf)
             # exponentiate log scaled variables
-            inp[:, i] = sign*np.exp(inp[:, i])
+            out.loc[:, name] = sign*np.exp(out.loc[:, name])
 
-        # denormalize non log variables
+            if len(sig) != 0:
+                sig.loc[:, name] *= (np.log(sup)-np.log(inf))
+                sig.loc[:, name] *= sig.loc[:, name]/np.log(sign*sig.loc[:, name]) # NOT SURE ABOUT THIS LINE
+
+        # denormalize linear scaled variables
         else:
-            inp[:, i] *= (input_info[i][3][1]-input_info[i][3][0])
-            inp[:, i] += input_info[i][3][0]
+            out.loc[:, name] *= (sup-inf)
+            out.loc[:, name] += inf
 
-    return inp
+            if len(sig) != 0:
+                sig.loc[:, name] *= (max-min)
 
-
-
-def postprocess_output(scaled_y, y, scaled_sigma = []):
-    out = copy.deepcopy(scaled_y)
-
-    # denormalize outputs
-    min = np.min(y)
-    max = np.max(y)
-    out *= (max-min)
-    out += min
-
-    if len(scaled_sigma) == 0:
+    if len(sig) == 0:
         return out
     else:
-        sigma = copy.deepcopy(scaled_sigma)
-        sigma *= (max-min)
-        return out, sigma
+        return out, sig
 
 
 
-def check_data(x, y):
-    for i in range(x.shape[1]):
+def check_data(inputs : pa.DataFrame, outputs : pa.DataFrame):
+    for name in inputs.columns:
         zero = False
         one = False
-        for j in range(x.shape[0]):
-            if x[i, j] == 0:
-                zero = True
-            elif x[i, j] == 1:
-                one = True
-            elif x[i, j] < 0 or x[i, j] > 1:
-                raise Exception("Data have not been preprocessed")
-        if not zero or not one:
-            raise Exception("Data have not been preprocessed")
+        if 1. in inputs[name] and 0. in inputs[name] and inputs[name].between(0., 1.).all():
+            pass
+        else:
+            raise Exception("Inputs have not been preprocessed")
 
-    for i in range(y.shape[1]):
+    for name in outputs.columns:
         zero = False
         one = False
-        for j in range(y.shape[0]):
-            if y[i, j] == 0:
-                zero = True
-            elif y[i, j] == 1:
-                one = True
-            elif y[i, j] < 0 or x[i, j] > 1:
-                raise Exception("Data have not been preprocessed")
-        if not zero or not one:
-            raise Exception("Data have not been preprocessed")
+        if 1. in outputs[name] and 0. in outputs[name] and outputs[name].between(0., 1.).all():
+            pass
+        else:
+            raise Exception("Outputs have not been preprocessed")
 
 
 
