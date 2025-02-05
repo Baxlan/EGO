@@ -14,14 +14,17 @@ def foo(angles):
         category[a] = 1
         dist.append(math.dist(coords, category))
 
-    category = np.zeros(vertex)
-    category[dist.index(min(dist))] = 1
-    return np.array(category)
+    if True:
+        category = np.zeros(vertex)
+        category[dist.index(min(dist))] = 1
+        return np.array(category)
+    else:
+        return dist
 
-n = 100_000
-angles = 20
+n = 10_000
+angles = 30
 categories = np.ndarray(shape=(n, angles+1))
-np.random.seed(14)
+#np.random.seed(14)
 
 for i in range(n):
     ang = []

@@ -9,6 +9,14 @@ import plotly.graph_objects as go
 import seaborn
 import pandas as pa
 import matplotlib.pyplot as plt
+import sys
+from scipy.stats import beta
+
+
+
+def error(text):
+    print(text)
+    sys.exit(-1)
 
 
 
@@ -22,56 +30,116 @@ import matplotlib.pyplot as plt
 
 def check_input_info(input_info : pa.DataFrame) -> None:
     if "name" not in input_info.columns:
-        raise Exception("\"name\" column is missing in input_info")
+        error("\"name\" column is missing in input_info")
     if "type" not in input_info.columns:
-        raise Exception("\"type\" column is missing in input_info")
+        error("\"type\" column is missing in input_info")
     if "scale" not in input_info.columns:
-        raise Exception("\"scale\" column is missing in input_info")
+        error("\"scale\" column is missing in input_info")
     if "bounds" not in input_info.columns:
-        raise Exception("\"bounds\" column is missing in input_info")
+        error("\"bounds\" column is missing in input_info")
 
     for i in range(len(input_info)):
-        if type(input_info.loc[i, "name"]) is not str:
-            raise Exception(str(i+1) + "th \"name\" in input_info must be a string")
-        if "~" in input_info.loc[i, "name"]:
-            raise Exception(str(i+1) + "th \"name\" in input_info contains a \"~\", which is forbidden")
+        name = input_info.loc[i, "name"]
+        if type(name) is not str:
+            error(str(i+1) + "th \"name\" in input_info must be a string")
+        if "~" in name:
+            error(str(i+1) + "th \"name\" in input_info contains a \"~\", which is forbidden")
         if input_info.loc[i, "type"] != "real" and input_info.loc[i, "type"] != "discrete" and input_info.loc[i, "type"] != "categorical":
-            raise Exception(str(i+1) + "th \"type\" in input_info must be \"real\", \"discrete\" or \"categorical\"")
+            error(name + "'s \"type\" in input_info must be \"real\", \"discrete\" or \"categorical\"")
         if type(input_info.loc[i, "bounds"]) != list:
-            raise Exception(str(i+1) + "th bounds in input_info must be a list")
+            error(name + "'s \"bounds\" in input_info must be a list")
 
         if input_info.loc[i, "type"] == "categorical":
             if input_info.loc[i, "scale"] != "none":
-                raise Exception(str(i+1) + "th \"scale\" in input_info must be \"none\", because its type is \"categorical\"")
+                error(name + "'s \"scale\" in input_info must be \"none\", because its type is \"categorical\"")
             if len(input_info.loc[i, "bounds"]) <= 1:
-                raise Exception(str(i+1) + "th \"bounds\" length must be at least 2")
+                error(name + "'s \"bounds\" length in input_info must be at least 2")
             for j in range(len(input_info.loc[i, "bounds"])):
                 if type(input_info.loc[i, "bounds"][j]) != str:
-                    raise Exception(str(i+1) + "th \"bounds\"/"+ str(j+1) +"th item must be a string because its type is \"categorical\"")
-                if "~" in input_info.loc[i, "bounds"][j]:
-                    raise Exception(str(i+1) + "th \"bounds\" in input_info contains a \"~\", which is forbidden")
+                    error(str(j+1) +"th item in " + name + "'s \"bounds\" in input_info must be a string because its type is \"categorical\"")
 
-        if input_info.loc[i, "type"] != "categorical":
+        else: # if input_info.loc[i, "type"] != "categorical":
             if input_info.loc[i, "scale"] == "none":
-                raise Exception(str(i+1) + "th \"scale\" in input_info cannot be \"none\", because its type is \"real\" or \"discrete\"")
+                error(name + "'s \"scale\" in input_info cannot be \"none\", because its type is \"real\" or \"discrete\"")
+            if input_info.loc[i, "scale"] != "lin" and input_info.loc[i, "scale"] != "log":
+                error(name + "'s \"scale\" in input_info must either be \"real\" or \"discrete\"")
             if len(input_info.loc[i, "bounds"]) != 2:
-                raise Exception(str(i+1) + "th \"bounds\" length must be exaclty 2")
+                error(name + "'s \"bounds\" length in input_info must be exaclty 2")
             for j in range(2):
-                if type (input_info.loc[i, "bounds"][j]) != float and type(input_info.loc[i, "bounds"][j]) != int:
-                    raise Exception(str(i+1) + "th \"bounds\"/"+ str(j+1) +"th item must be a floa or an integer")
+                if type(input_info.loc[i, "bounds"][j]) != float and type(input_info.loc[i, "bounds"][j]) != int:
+                    error(str(j+1) +"th item in " + name + "'s \"bounds\" in input_info must be a float or an integer")
             if input_info.loc[i, "bounds"][0] >= input_info.loc[i, "bounds"][1]:
-                raise Exception("Lower boundary of the " + str(i+1) + "th variable must be strictly inferior to its upper boundary")
+                error("Lower boundary of the " + name + " variable in input_info must be strictly inferior to its upper boundary")
             if input_info.loc[i, "scale"] == "log" and (input_info.loc[i, "bounds"][0] == 0 or input_info.loc[i, "bounds"][1] == 0):
-                raise Exception("Boundaries of the " + str(i+1) + "th variable cannot be 0 because its scale is \"log\"")
+                error("Boundaries of the " + name + " variable in input_info cannot be 0 because its scale is \"log\"")
             if input_info.loc[i, "scale"] == "log" and input_info.loc[i, "bounds"][0] < 0 and input_info.loc[i, "bounds"][1] > 0:
-                raise Exception("Boundaries of the " + str(i+1) + "th variable must be of the same sign because its scale is \"log\"")
+                error("Boundaries of the " + name + " variable in input_info must be of the same sign because its scale is \"log\"")
+
+
+
+def check_constraints(constr1, constr2):
+    # check if constr2 is always true when constr is true
+    return False
 
 
 
 def check_output_info(output_info : pa.DataFrame) -> None:
-    print("Nothing done")
+    if "name" not in output_info.columns:
+        error("\"name\" column is missing in output_info")
+    if "constraints" not in output_info.columns:
+        error("\"constraints\" column is missing in output_info")
+    if "scale" not in output_info.columns:
+        error("\"scale\" column is missing in output_info")
 
+    objective = False
 
+    for i in range(len(output_info)):
+        name = output_info.loc[i, "name"]
+        if type(name) is not str:
+            error(name + "'s \"name\" in output_info must be a string")
+        if output_info.loc[i, "scale"] != "lin" and output_info.loc[i, "scale"] != "log":
+            error(name + "'s \"scale\" in output_info must either be \"lin\" or \"log\"")
+
+        if output_info.loc[i, "constraints"] == "objective":
+            if objective:
+                error("Only one objective can be defined in output_info")
+            else:
+                objective = True
+        elif type(output_info.loc[i, "constraints"]) != list:
+            error(name + "'s \"constraint\" in output_info must be a list (or \"objective\")")
+        elif len(output_info.loc[i, "constraints"]) == 0:
+            error(name + "'s \"constraint\" list in output_info cannot be empty")
+        else:
+            for j in range(len(output_info.loc[i, "constraints"])):
+                if type(output_info.loc[i, "constraints"][j]) != list:
+                    error(str(j+1) + "th " + name + "'s \"constraint\" in output_info must be a list")
+                elif len(output_info.loc[i, "constraints"][j]) not in  [2, 4]:
+                    error(str(j+1) + "th " + name + "'s \"constraint\" length in output_info must be 2 or 4")
+                else:
+                    for k in range(len(output_info.loc[i, "constraints"][j])):
+                        if k % 2 == 1 and type(output_info.loc[i, "constraints"][j][k]) != float:
+                            error(str(k+1) + "th item in the " + str(j+1) + "th " + name + "'s \"constraint\" in output_info must be a float")
+                        elif k % 2 == 0 and output_info.loc[i, "constraints"][j][k] not in ["<", ">"]:
+                            error(str(k+1) + "th item in the " + str(j+1) + "th " + name + "'s \"constraint\" in output_info must be either \"<\" or \">\"")
+                    if len(output_info.loc[i, "constraints"][j]) == 4:
+                        a = ["a", "a"]
+                        if output_info.loc[i, "constraints"][j][0] == "<":
+                            a[0] = output_info.loc[i, "constraints"][j][1]
+                        else:
+                            a[1] = output_info.loc[i, "constraints"][j][1]
+                        a[a.index("a")] = output_info.loc[i, "constraints"][j][3]
+                        if a[0] < a[1]:
+                            error(str(j+1) + "th " + name + "'s \"constraint\" in output_info is never satisfied")
+                        elif a[0] == a[1]:
+                            error(str(j+1) + "th " + name + "'s \"constraint\" in output_info is always satisfied")
+                for k in range(len(output_info.loc[i, "constraints"])):
+                    if k == j:
+                        continue
+                    if check_constraints(output_info.loc[i, "constraints"][j], output_info.loc[i, "constraints"][k]):
+                        error("When the " + str(j) + "th " + name + "'s \"constraint\" is satisfied, its " + str(k) + "th one is also ALWAYS satisfied. They are redundant")
+
+    if not objective:
+        error("No objective defined in output_info")
 
 
 def dummify_input_info(input_info : pa.DataFrame) -> pa.DataFrame:
@@ -107,45 +175,51 @@ def preprocess_outputs_and_info(outputs : pa.DataFrame, output_info : pa.DataFra
 
             out.loc[:, name] = np.log(sign*out.loc[:, name])
 
-            # normalize log variables
+            # normalize log variables, MAYBE WE SHOULD LOG BEFORE NORMALIZING ?
             out.loc[:, name] -= np.log(inf)
             out.loc[:, name] /= (np.log(sup) - np.log(inf))
 
-            if out_info.loc[name, "constraints"] != "none":
-                out_info.loc[name, "constraints"] = np.log(sign*out_info.loc[name, "constraints"])
-                out_info.loc[name, "constraints"] -= np.log(inf)
-                out_info.loc[name, "constraints"] /= (np.log(sup) - np.log(inf))
-                out_info.loc[name, "constraints"] = list(out_info.loc[name, "constraints"])
+            if out_info.loc[name, "constraints"] != "objective":
+                for i in range(len(out_info.loc[name, "constraints"])):
+                    for j in range(len(out_info.loc[name, "constraints"][i])):
+                        if j % 2 == 1:
+                            out_info.loc[name, "constraints"][i][j] = np.log(sign*out_info.loc[name, "constraints"][i][j])
+                            out_info.loc[name, "constraints"][i][j] -= np.log(inf)
+                            out_info.loc[name, "constraints"][i][j] /= (np.log(sup) - np.log(inf))
+                            # CHANGE "<" to ">" AND VICE VERSA IF NEGATIVE SIGN
 
 
         #normalize linear scaled variables
         else:
             out.loc[:, name] -= inf
             out.loc[:, name] /= (sup - inf)
-            if out_info.loc[name, "constraints"] != "none":
-                out_info.loc[name, "constraints"] -= inf
-                out_info.loc[name, "constraints"] /= (sup-inf)
-                out_info.loc[name, "constraints"] = list(out_info.loc[name, "constraints"])
+            if out_info.loc[name, "constraints"] != "objective":
+                for i in range(len(out_info.loc[name, "constraints"])):
+                    for j in range(len(out_info.loc[name, "constraints"][i])):
+                        if j % 2 == 1:
+                            out_info.loc[name, "constraints"][i][j] -= inf
+                            out_info.loc[name, "constraints"][i][j] /= (sup-inf)
 
     return out, out_info
 
 
 
-def spherical_to_cartesian(spherical_coords : list) -> list:
-    """
-    It is assumed that all the arguments (except the last one) are cosines of the polar angles.
-    while the last argument is the normalized angle [0, 1] of the azimuth.
-    """
-    angles = [math.acos(spherical_coords[i]) for i in range(len(spherical_coords)-1)] + [spherical_coords[-1]*math.pi/2]
+def spherical_to_cartesian(spherical_coords):
+    # spherical_coords are not really spherical coordinates, they are uniformly
+    # distributed variables that must be converted to beta distributed ones
 
-    N = len(angles) + 1
+    N = len(spherical_coords)
+    angles = [math.acos(abs((2*beta.ppf(spherical_coords[i], (N-i)/2, (N-i)/2)-1))) for i in range(len(spherical_coords))]
+
+    N += 1 # cartesian coords
     cartesian_coords = np.zeros(N)
-    cartesian_coords[0] = np.cos(angles[0])
+    sin_cumul = 1
 
-    for i in range(1, N-1):
-        cartesian_coords[i] = np.cos(angles[i]) * np.prod(np.sin(angles[:i]))
+    for i in range(0, N-1):
+        cartesian_coords[i] = np.cos(angles[i]) * sin_cumul
+        sin_cumul *= np.sin(angles[i])
 
-    cartesian_coords[N-1] = np.prod(np.sin(angles))
+    cartesian_coords[-1] = sin_cumul
     return cartesian_coords
 
 
@@ -258,18 +332,14 @@ def check_data(inputs : pa.DataFrame, outputs : pa.DataFrame):
     for name in inputs.columns:
         zero = False
         one = False
-        if 1. in inputs[name] and 0. in inputs[name] and inputs[name].between(0., 1.).all():
-            pass
-        else:
-            raise Exception("Inputs have not been preprocessed")
+        if not 1. in inputs[name] or not 0. in inputs[name] or not inputs[name].between(0., 1.).all():
+            error("Inputs have not been preprocessed")
 
     for name in outputs.columns:
         zero = False
         one = False
-        if 1. in outputs[name] and 0. in outputs[name] and outputs[name].between(0., 1.).all():
-            pass
-        else:
-            raise Exception("Outputs have not been preprocessed")
+        if not 1. in outputs[name] or not 0. in outputs[name] or not outputs[name].between(0., 1.).all():
+            error("Outputs have not been preprocessed")
 
 
 
@@ -299,7 +369,7 @@ def check_metric(x, metric):
         elif metric.ndim == 2 and len(metric) == len(x[0]) and len(metric[0]) == len(x[0]) and np.allclose(metric, metric.T, rtol=1e-9, atol=1e-12):
             return metric
         else:
-            raise Exception("The \"metric\" parameter must either be a scalar, a 1D array of length N (problem dimensionality), or a 2D SYMMETRIC N*N array")
+            error("The \"metric\" parameter must either be a scalar, a 1D array of length N (problem dimensionality), or a 2D SYMMETRIC N*N array")
 
 
 
@@ -308,7 +378,7 @@ def get_triangular_matrix_rank_from_list(vals):
     N = (-1+math.sqrt(1+8*len(vals)))/2
     n = int(N)
     if (n-N)%1 != 0:
-        raise Exception("Number of elements doesn't match with a squarre triangular matrix")
+        error("Number of elements doesn't match with a squarre triangular matrix")
     return n
 
 
@@ -398,27 +468,27 @@ def param_optimizer(M, *args):
 
 def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method):
     if type(initial) != list and type(initial) != np.ndarray:
-        raise Exception("\"initial\" parameter must be a list or an array")
+        error("\"initial\" parameter must be a list or an array")
 
     n = len(x[0])
 
     if isotropy == "iso":
         b = [bounds]
         if len(initial) != len(b):
-            raise Exception("Initial point of metric optimization must be of length 1. It is " + str(len(initial)))
+            error("Initial point of metric optimization must be of length 1. It is " + str(len(initial)))
 
     elif isotropy == "diag":
         b = [bounds for i in range(n)]
         if len(initial) != len(b):
-            raise Exception("Initial point of metric optimization must be of length " + str(len(b)) + ". It is " + str(len(initial)))
+            error("Initial point of metric optimization must be of length " + str(len(b)) + ". It is " + str(len(initial)))
 
     elif isotropy == "aniso":
         b = [bounds for i in range(int(n*(n+1)/2))]
         if len(initial) != len(b):
-            raise Exception("Initial point of metric optimization must be of length " + str(len(b)) + ". It is " + str(len(initial)))
+            error("Initial point of metric optimization must be of length " + str(len(b)) + ". It is " + str(len(initial)))
 
     else:
-        raise Exception("\"isotropy\" parameter must be \"iso\", \"diag\" or \"aniso\"")
+        error("\"isotropy\" parameter must be \"iso\", \"diag\" or \"aniso\"")
 
 
 
@@ -441,7 +511,7 @@ def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method
         warnings.filterwarnings("default")
 
     else:
-        raise Exception("\"method\" parameter must be \"stochastic\" or \"gradient\"")
+        error("\"method\" parameter must be \"stochastic\" or \"gradient\"")
 
     M = response.x
     if isotropy == "aniso":
@@ -466,7 +536,7 @@ def optimized_metric_tuple(args):
 
 def optimal_metric(diffs, x, y, noise, bounds, iso, seed, threads):
     if bounds[0] >= bounds[1]:
-        raise Exception("Lower bound must be strictly inferior to upper bound")
+        error("Lower bound must be strictly inferior to upper bound")
 
     isotropies = {"iso" : 1, "diag" : len(x[0]), "aniso" : int(len(x[0])*(len(x[0])+1)/2)}
     methods = ["gradient", "stochastic"]
@@ -502,7 +572,7 @@ def optimal_metric(diffs, x, y, noise, bounds, iso, seed, threads):
         else:
             return metric, lml
 
-    raise Exception("No optimal metric found. Try to change bounds, seed or number of points")
+    error("No optimal metric found. Try to change bounds, seed or number of points")
 
 
 
@@ -685,9 +755,6 @@ def are_contraint_satifcation_probable(value, sigma, a, constraint):
 
 
 def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
-    if len(constraints) % 2 != 0:
-        raise Exception("Nested constraint must have a pair length")
-
     for i in range(len(constraints)):
         if i % 2 != 0:
             continue
@@ -699,7 +766,7 @@ def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
             if value + a*sigma <= constraints[i+1]:
                 return False
         else:
-            raise Exception("Constraint condition must be either > or <")
+            error("Constraint condition must be either > or <")
 
     return True
 
@@ -771,7 +838,7 @@ def pairPlot(x, y, input_info, output_info):
 class BayesianOptimizer:
     def __init__(self, title, noise, input_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
         if np.array(noise).size != len(constraints)+1:
-            raise Exception("Noise length must have same length than constraint one + 1 (ie: " + str(len(constraints)+1) + "). " + str(len(noise)) + " provided")
+            error("Noise length must have same length than constraint one + 1 (ie: " + str(len(constraints)+1) + "). " + str(len(noise)) + " provided")
         self.title = title
         self.noise = noise
         self.input_info = input_info
@@ -792,11 +859,11 @@ class BayesianOptimizer:
         x = np.array(x)
         y = np.array(y)
         if  x.ndim != 2:
-            raise Exception("X data must be 2-dimensional")
+            error("X data must be 2-dimensional")
         if  y.ndim != 2:
-            raise Exception("Y data must be 2-dimensional")
+            error("Y data must be 2-dimensional")
         if y.shape[1] != len(self.constraints)+1:
-            raise Exception("Y data must containt as much data as constraints + 1 (ie: " + str(len(self.constraints)+1) + "). " + str(y.shape[1]) + " provided")
+            error("Y data must containt as much data as constraints + 1 (ie: " + str(len(self.constraints)+1) + "). " + str(y.shape[1]) + " provided")
         if self.x == None:
             self.x = x
             self.y = y
