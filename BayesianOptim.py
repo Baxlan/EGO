@@ -14,7 +14,7 @@ from scipy.stats import beta
 
 
 
-def error(text):
+def error(text : str) -> None:
     print(text)
     sys.exit(-1)
 
@@ -142,6 +142,7 @@ def check_output_info(output_info : pa.DataFrame) -> None:
         error("No objective defined in output_info")
 
 
+
 def dummify_input_info(input_info : pa.DataFrame) -> pa.DataFrame:
     new_input_info = []
 
@@ -157,7 +158,42 @@ def dummify_input_info(input_info : pa.DataFrame) -> pa.DataFrame:
 
 
 
-def preprocess_outputs_and_info(outputs : pa.DataFrame, output_info : pa.DataFrame) -> pa.DataFrame:
+def preprocess_inputs(inputs : pa.DataFrame, input_info : pa.DataFrame, force : bool = False) -> pa.DataFrame:
+    if not force and "categorical" in input_info.loc[:, "type"]:
+        error("Inputs cannot be processed with categorical variables")
+
+    # TEMPORARY : CATEGORICAL PREPROCESSING MUST BE IMPLEMENTED
+    if "categorical" in input_info.loc[:, "type"]:
+        error("Categorical preprocessing is not implemented yet")
+
+    inp = copy.deepcopy(inputs)
+
+    for name in inp.columns:
+        inf = input_info.loc[name, "bounds"][0]
+        sup = input_info.loc[name, "bounds"][1]
+        # linearize log scaled variables
+        if input_info.loc[name, "scale"] == "log":
+            sign = 1
+            if inf < 0:
+                sign = -1
+                inf, sup = -sup, -inf
+
+            inp.loc[:, name] = np.log(sign*inp.loc[:, name])
+
+            # normalize log variables
+            inp.loc[:, name] -= np.log(inf)
+            inp.loc[:, name] /= (np.log(sup) - np.log(inf))
+
+        else:
+            # normalize non log variables
+            inp.loc[:, name] -= inf
+            inp.loc[:, name] /= (sup-inf)
+
+    return inp
+
+
+
+def preprocess_outputs_and_info(outputs : pa.DataFrame, output_info : pa.DataFrame) -> (pa.DataFrame, pa.DataFrame):
     out = copy.deepcopy(outputs)
     out_info = copy.deepcopy(output_info)
     out_info.index = out_info["name"]
@@ -175,10 +211,11 @@ def preprocess_outputs_and_info(outputs : pa.DataFrame, output_info : pa.DataFra
 
             out.loc[:, name] = np.log(sign*out.loc[:, name])
 
-            # normalize log variables, MAYBE WE SHOULD LOG BEFORE NORMALIZING ?
+            # normalize log variables
             out.loc[:, name] -= np.log(inf)
             out.loc[:, name] /= (np.log(sup) - np.log(inf))
 
+            # adapting output_info for log scaled constraints
             if out_info.loc[name, "constraints"] != "objective":
                 for i in range(len(out_info.loc[name, "constraints"])):
                     for j in range(len(out_info.loc[name, "constraints"][i])):
@@ -186,25 +223,38 @@ def preprocess_outputs_and_info(outputs : pa.DataFrame, output_info : pa.DataFra
                             out_info.loc[name, "constraints"][i][j] = np.log(sign*out_info.loc[name, "constraints"][i][j])
                             out_info.loc[name, "constraints"][i][j] -= np.log(inf)
                             out_info.loc[name, "constraints"][i][j] /= (np.log(sup) - np.log(inf))
-                            # CHANGE "<" to ">" AND VICE VERSA IF NEGATIVE SIGN
+                        else:
+                            if sign * (np.log(sup) - np.log(inf)) < 0:
+                                if out_info.loc[name, "constraints"][i][j] == "<":
+                                    out_info.loc[name, "constraints"][i][j] = ">"
+                                else:
+                                    out_info.loc[name, "constraints"][i][j] = "<"
 
-
-        #normalize linear scaled variables
         else:
+            #normalize linear scaled variables
             out.loc[:, name] -= inf
             out.loc[:, name] /= (sup - inf)
+
+            # adapting output_info for log scaled variables
             if out_info.loc[name, "constraints"] != "objective":
                 for i in range(len(out_info.loc[name, "constraints"])):
                     for j in range(len(out_info.loc[name, "constraints"][i])):
                         if j % 2 == 1:
                             out_info.loc[name, "constraints"][i][j] -= inf
                             out_info.loc[name, "constraints"][i][j] /= (sup-inf)
+                        else:
+                            if sup-inf < 0:
+                                if out_info.loc[name, "constraints"][i][j] == "<":
+                                    out_info.loc[name, "constraints"][i][j] = ">"
+                                else:
+                                    out_info.loc[name, "constraints"][i][j] = "<"
 
+    out_info.index = range(len(out_info.index))
     return out, out_info
 
 
 
-def spherical_to_cartesian(spherical_coords):
+def spherical_to_cartesian(spherical_coords : np.array) -> np.array:
     # spherical_coords are not really spherical coordinates, they are uniformly
     # distributed variables that must be converted to beta distributed ones
 
@@ -265,11 +315,11 @@ def postprocess_inputs(dummy_inputs : pa.DataFrame, input_info : pa.DataFrame) -
         for name in in_info["name"]:
 
             if in_info.loc[name, "type"] == "categorical":
-                cosines = []
+                categorical_parameters = []
 
                 for k in range(1, len(in_info.loc[name, "bounds"])):
-                    cosines.append(inp.loc[i, name+"~"+str(k)])
-                coords = spherical_to_cartesian(cosines)
+                    categorical_parameters.append(inp.loc[i, name+"~"+str(k)])
+                coords = spherical_to_cartesian(categorical_parameters)
 
                 dist = []
                 for a in range(len(coords)):
@@ -288,7 +338,7 @@ def postprocess_inputs(dummy_inputs : pa.DataFrame, input_info : pa.DataFrame) -
 
 
 
-def postprocess_output(normalized_outputs : pa.DataFrame, outputs : pa.DataFrame, output_info : pa.DataFrame, normalized_sigma : pa.DataFrame = []):
+def postprocess_output(normalized_outputs : pa.DataFrame, outputs : pa.DataFrame, output_info : pa.DataFrame, normalized_sigma : pa.DataFrame = []) -> (pa.DataFrame, pa.DataFrame):
     out = copy.deepcopy(normalized_outputs)
     sig = copy.deepcopy(normalized_sigma)
     output_info.index = output_info["name"]
@@ -328,7 +378,7 @@ def postprocess_output(normalized_outputs : pa.DataFrame, outputs : pa.DataFrame
 
 
 
-def check_data(inputs : pa.DataFrame, outputs : pa.DataFrame):
+def check_data(inputs : pa.DataFrame, outputs : pa.DataFrame) -> None:
     for name in inputs.columns:
         zero = False
         one = False
@@ -351,30 +401,31 @@ def check_data(inputs : pa.DataFrame, outputs : pa.DataFrame):
 
 
 
-def check_metric(x, metric):
+def check_metric(x : pa.DataFrame, metric : np.ndarray) -> np.ndarray:
+    dim = x.shape[1]
     if isinstance(metric, (int, float, np.floating)):
-        M = np.zeros((len(x[0]), len(x[0])))
+        M = np.zeros((dim, dim))
         np.fill_diagonal(M, metric)
         return M
     elif (type(metric) == list or (type(metric) == np.ndarray and metric.ndim == 1)) and len(metric) == 1:
-        M = np.zeros((len(x[0]), len(x[0])))
+        M = np.zeros((dim, dim))
         np.fill_diagonal(M, metric[0])
         return M
     else:
         metric = np.array(metric)
-        if metric.ndim == 1 and len(metric) == len(x[0]):
+        if metric.ndim == 1 and len(metric) == dim:
             return np.diag(metric)
-        elif metric.ndim == 1 and len(metric) == len(x[0])*(len(x[0])+1)/2:
+        elif metric.ndim == 1 and len(metric) == dim*(dim+1)/2:
             return make_symmetric_matrix_from_list(metric)
-        elif metric.ndim == 2 and len(metric) == len(x[0]) and len(metric[0]) == len(x[0]) and np.allclose(metric, metric.T, rtol=1e-9, atol=1e-12):
+        elif metric.ndim == 2 and len(metric) == dim and len(metric[0]) == dim and np.allclose(metric, metric.T, rtol=1e-9, atol=1e-12):
             return metric
         else:
             error("The \"metric\" parameter must either be a scalar, a 1D array of length N (problem dimensionality), or a 2D SYMMETRIC N*N array")
 
 
 
-# vals must be a list containing elements of the upper triangular matrix
-def get_triangular_matrix_rank_from_list(vals):
+def get_triangular_matrix_rank_from_list(vals : list) -> int:
+    # vals must be a list containing elements of the upper triangular matrix
     N = (-1+math.sqrt(1+8*len(vals)))/2
     n = int(N)
     if (n-N)%1 != 0:
@@ -383,7 +434,7 @@ def get_triangular_matrix_rank_from_list(vals):
 
 
 
-def make_symmetric_matrix_from_list(vals):
+def make_symmetric_matrix_from_list(vals : list) -> np.ndarray:
     n = get_triangular_matrix_rank_from_list(vals)
     m = np.zeros([n,n], dtype=np.double)
     xs,ys = np.triu_indices(n)
@@ -393,25 +444,19 @@ def make_symmetric_matrix_from_list(vals):
 
 
 
-def make_diff_list(x, input_info, uncertainties=False):
+def make_diff_list(x : pa.DataFrame) -> np.array:
     diffs = []
     for i in range(len(x)):
         for j in range(len(x)-i):
             diffs.append(x[i] - x[j+i])
 
-            if uncertainties:
-                for k in len(x[i]):
-                    diffs[len(diffs)-1][k] += input_info[k] * math.sqrt(x[i][k]**2 + x[j+i][k]**2)
-
-
     return np.array(diffs)
 
 
 
-def make_kernel(diffs, noise, metric):
+def make_kernel(diffs, metric):
     K = [np.exp(-np.sum(diff.transpose() * metric * diff)) for diff in diffs]
-    K = make_symmetric_matrix_from_list(K)
-    return K + noise * np.eye(len(K))
+    return make_symmetric_matrix_from_list(K)
 
 
 
@@ -460,13 +505,13 @@ def delinearize_metric(x, metric, bounds):
 
 
 def param_optimizer(M, *args):
-    metric = delinearize_metric(args[4], M, args[3])
-    K = make_kernel(args[0], args[2], metric=metric)
+    metric = delinearize_metric(args[3], M, args[2])
+    K = make_kernel(args[0], metric=metric)
     return -log_marginal_likelihood(K, args[1])
 
 
 
-def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method):
+def optimized_metric(diffs, x, y, isotropy, seed, initial, bounds, method):
     if type(initial) != list and type(initial) != np.ndarray:
         error("\"initial\" parameter must be a list or an array")
 
@@ -497,7 +542,7 @@ def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method
 
         response = sp.optimize.differential_evolution( \
             func=param_optimizer, bounds=b, x0=initial, \
-            args=(diffs, y, noise, bounds, x), seed=seed)
+            args=(diffs, y, bounds, x), seed=seed)
 
         warnings.filterwarnings("default")
 
@@ -506,7 +551,7 @@ def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method
 
         response = sp.optimize.minimize( \
             fun=param_optimizer, bounds=b, x0=initial, \
-            args=(diffs, y, noise, bounds, x), method="L-BFGS-B")
+            args=(diffs, y, bounds, x), method="L-BFGS-B")
 
         warnings.filterwarnings("default")
 
@@ -530,11 +575,11 @@ def optimized_metric(diffs, x, y, noise, isotropy, seed, initial, bounds, method
 
 
 def optimized_metric_tuple(args):
-    return optimized_metric(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7], args[8])
+    return optimized_metric(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])
 
 
 
-def optimal_metric(diffs, x, y, noise, bounds, iso, seed, threads):
+def optimal_metric(diffs, x, y, bounds, iso, seed, threads):
     if bounds[0] >= bounds[1]:
         error("Lower bound must be strictly inferior to upper bound")
 
@@ -550,7 +595,7 @@ def optimal_metric(diffs, x, y, noise, bounds, iso, seed, threads):
         initial = generator.random_base2(m=m)[:n]
         initial = [init*(bounds[1]-bounds[0])+bounds[0] for init in initial]
         for init in initial:
-            args.append((diffs, x, y, noise, iso, seed, init, bounds, method))
+            args.append((diffs, x, y, iso, seed, init, bounds, method))
 
     metrics_lmls = pool.map(optimized_metric_tuple, args)
 
@@ -566,7 +611,7 @@ def optimal_metric(diffs, x, y, noise, bounds, iso, seed, threads):
     metrics = dict(sorted(metrics.items(), reverse=True))
 
     for lml, metric in metrics.items():
-        K = make_kernel(diffs, noise, metric)
+        K = make_kernel(diffs, metric)
         if (K > 1e-4).all():
             continue
         else:
@@ -836,11 +881,8 @@ def pairPlot(x, y, input_info, output_info):
 
 
 class BayesianOptimizer:
-    def __init__(self, title, noise, input_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
-        if np.array(noise).size != len(constraints)+1:
-            error("Noise length must have same length than constraint one + 1 (ie: " + str(len(constraints)+1) + "). " + str(len(noise)) + " provided")
+    def __init__(self, title, input_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
         self.title = title
-        self.noise = noise
         self.input_info = input_info
         self.dummy_data_info = dummify_data_info(input_info)
         self.constraints = constraints
@@ -893,9 +935,9 @@ class BayesianOptimizer:
         metrics = []
         kernels = []
         for i in range(len(self.constraints)+1):
-            metric, lml = optimal_metric(diffs, x, y[:,i], self.noise[i], metric_bounds, self.iso, self.seed, self.threads)
+            metric, lml = optimal_metric(diffs, x, y[:,i], metric_bounds, self.iso, self.seed, self.threads)
             metrics.append(metric)
-            kernels.append(make_kernel(diffs, self.noise[i], metric))
+            kernels.append(make_kernel(diffs, metric))
 
         print(metrics[0], flush=True)
         print("lml = " + str(lml), flush=True)
@@ -918,12 +960,13 @@ class BayesianOptimizer:
         self.kernel = kernels[0]
         self.metric = metrics[0]
         return postprocess_inputs(next_pts, self.dummy_data_info)
-    
-    
+
+
+
     def save(self):
         pass
-    
+
+
+
     def load(self):
         pass
-    
-    

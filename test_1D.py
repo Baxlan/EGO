@@ -8,10 +8,10 @@ import pandas as pa
 
 
 # name, real or discrete, lin or log, bounds
-input_info = [
-    ["var1", "real", "lin", [0, 1]]]
+input_info = []
+input_info.append({"name":"var1", "type":"real", "scale":"lin", "bounds":[0, 1]})
+input_info = pa.DataFrame(input_info)
 
-input_info_df = pa.DataFrame(input_info, columns=["name", "type", "scale", "inf_bound", "sup_bound", "rel_sigma"])
 
 
 def func(x):
