@@ -167,12 +167,14 @@ def preprocess_inputs(inputs : pa.DataFrame, input_info : pa.DataFrame, force : 
         error("Categorical preprocessing is not implemented yet")
 
     inp = copy.deepcopy(inputs)
+    inp_info = copy.deepcopy(input_info)
+    inp_info.index = inp_info["name"]
 
     for name in inp.columns:
-        inf = input_info.loc[name, "bounds"][0]
-        sup = input_info.loc[name, "bounds"][1]
+        inf = inp_info.loc[name, "bounds"][0]
+        sup = inp_info.loc[name, "bounds"][1]
         # linearize log scaled variables
-        if input_info.loc[name, "scale"] == "log":
+        if inp_info.loc[name, "scale"] == "log":
             sign = 1
             if inf < 0:
                 sign = -1
@@ -310,7 +312,7 @@ def postprocess_inputs(dummy_inputs : pa.DataFrame, input_info : pa.DataFrame) -
     postprocessed_inputs = pa.DataFrame(columns=in_info["name"])
 
     # categorify dummy data
-    for i in range(len(inp)):
+    for i in range(inp.shape[0]):
         new_row = {}
         for name in in_info["name"]:
 
@@ -333,7 +335,7 @@ def postprocess_inputs(dummy_inputs : pa.DataFrame, input_info : pa.DataFrame) -
             else:
                 new_row[name] = inp.loc[i, name]
 
-        postprocessed_inputs.loc[len(postprocessed_inputs)] = new_row
+        postprocessed_inputs.loc[postprocessed_inputs.shape[0]] = new_row
     return postprocessed_inputs
 
 
@@ -444,7 +446,8 @@ def make_symmetric_matrix_from_list(vals : list) -> np.ndarray:
 
 
 
-def make_diff_list(x : pa.DataFrame) -> np.array:
+def make_diff_list(inputs : pa.DataFrame) -> np.array:
+    x = inputs.to_numpy()
     diffs = []
     for i in range(len(x)):
         for j in range(len(x)-i):
@@ -649,17 +652,17 @@ def bound_combinations(bounds):
 
 def first_points(input_info, n, seed):
     points = random_points(input_info, n, seed)
-    bounds = bound_combinations([[0,1] for i in range(len(input_info))])
-    return np.vstack([bounds, points])
+    bounds = bound_combinations([[0,1] for i in range(input_info.shape[0])])
+    bounds = pa.DataFrame(bounds, columns=input_info["name"])
+    return pa.concat([bounds, points], ignore_index=True)
 
 
 
 def random_points(input_info, n, seed):
-    check_data_info([np.ones(len(input_info))], input_info)
     m = math.ceil(math.log(n)/math.log(2))
-    points_generator = sp.stats.qmc.Sobol(d=len(input_info), seed=seed)
+    points_generator = sp.stats.qmc.Sobol(d=input_info.shape[0], seed=seed)
     points = points_generator.random_base2(m=m)[:n]
-    return points
+    return pa.DataFrame(points, columns=input_info["name"])
 
 
 
@@ -681,24 +684,36 @@ def predict(model, x, x_new):
 
 
 def next_points(models, x, input_info, constraints, n, seed, a, epsilon=1e-13, threads=1):
-    results = {}
     pool = multiprocessing.Pool(threads)
     points = random_points(input_info, math.ceil(n/2), seed)
-    args = [(models, x, point, a, epsilon, constraints) for point in points]
+    args = [(models, x, point, a, epsilon, constraints) for point in points.to_numpy()]
     res  = pool.map(find_max_ei_gradient, args)
 
     points = random_points(input_info, math.floor(n/2), seed+1)
-    args = [(models, x, point, a, epsilon, constraints, seed) for point in points]
+    args = [(models, x, point, a, epsilon, constraints, seed) for point in points.to_numpy()]
     res2 = pool.map(find_max_ei_stochastic, args)
     pool.close()
 
     res = res + res2
-
+    results_dict = {}
     for i in range(len(res)):
-        results[res[i][0]] = res[i][1]
+        # keys are ei, values are points
+        results_dict[res[i][0]] = res[i][1]
 
-    # keys are ei, values are points
-    return dict(sorted(results.items(), reverse=True))
+    # sorting in descending ei
+    results_dict = dict(sorted(results_dict.items(), reverse=True))
+
+    # convertring to dataframe then keeping only the n first values
+    results = pa.DataFrame(results_dict.values(), columns=points.columns)
+    ei = list(results_dict.keys())
+
+    if n < results.shape[0]:
+            results = results[:n]
+            ei = ei[:n]
+    elif n > results.shape[0]:
+        results = results + random_points(input_info=input_info, n=n-results.shape[0], seed=seed)
+
+    return ei, results
 
 
 
@@ -759,34 +774,56 @@ def expected_improvement(y_mean, y_sigma, y_best, a, epsilon):
 
 
 def find_max_ei_gradient(args):
+    models = args[0]
+    x = args[1]
+    point = args[2]
+    a = args[3]
+    epsilon = args[4]
+    constraints = args[5]
+
     response = sp.optimize.minimize( \
-        fun=acquisition_function, x0=args[2], \
-        args=(args[0], args[1], args[3], args[4], args[5]), method="L-BFGS-B", \
-        bounds=[[0, 1] for i in range(len(args[1][0]))])
+        fun=acquisition_function, x0=point, \
+        args=(models, x, a, epsilon, constraints), method="L-BFGS-B", \
+        bounds=[[0, 1] for i in range(len(x[0]))])
 
     return (-response.fun, response.x)
 
 
 
 def find_max_ei_stochastic(args):
+    models = args[0]
+    x = args[1]
+    point = args[2]
+    a = args[3]
+    epsilon = args[4]
+    constraints = args[5]
+    seed = args[6]
+
     response = sp.optimize.differential_evolution( \
-        func=acquisition_function, x0=args[2], seed=args[6], \
-        args=(args[0], args[1], args[3], args[4], args[5]), \
-        bounds=[[0, 1] for i in range(len(args[1][0]))])
+        func=acquisition_function, x0=point, seed=seed, \
+        args=(models, x, a, epsilon, constraints), \
+        bounds=[[0, 1] for i in range(len(x[0]))])
 
     return (-response.fun, response.x)
 
 
 
 def acquisition_function(X_new, *args):
-    if len(args[0]) > 1:
-        for i in range(len(args[0])-1):
-            pred, sigma = predict(args[0][i], args[1], [X_new])
-            if not are_contraint_satifcation_probable(pred, sigma, args[2], args[4][i]):
-                return 0
+    models = args[0]
+    x = args[1]
+    a = args[2]
+    epsilon = args[3]
+    constraints = args[4]
 
-    pred, sigma = predict(args[0][0], args[1], [X_new])
-    return -expected_improvement(pred, sigma, max(args[0][0][1]), args[2], args[3])[0]
+    if len(models) > 1:
+        for i in range(len(models)-1):
+            pred, sigma = predict(models[i], x, [X_new])
+            if not are_contraint_satifcation_probable(pred, sigma, a, constraints[i]):
+                return 0
+                # RETOURNER QUELQUE CHOSE DE PLUS SMOOTH QUE 0
+
+    pred, sigma = predict(models[0], x, [X_new])
+    return -expected_improvement(pred, sigma, max(models[0][1]), a, epsilon)[0]
 
 
 
@@ -825,11 +862,14 @@ def are_nested_contraint_satifcation_probable(value, sigma, a, constraints):
 
 
 
-def parallelPlot(x, y, input_info, output_info):
-    all_data = np.hstack([x, y])
-    all_labels = np.hstack([[input_info[i][0] for i in range(len(input_info))], [output_info[i][0] for i in range(len(output_info))]])
-    all_scales = np.hstack([[input_info[i][2] for i in range(len(input_info))], [output_info[i][1] for i in range(len(output_info))]])
+def parallelPlot(inputs, outputs, input_info, output_info):
+    all_labels = list(input_info["name"]) + list(output_info["name"])
+    all_scales = list(input_info["scale"]) + list(output_info["scale"])
+    # put data in the same order as the ones in the infos
+    all_data = pa.concat([inputs[input_info["name"]], outputs[output_info["name"]]], axis=1).to_numpy()
+
     dimensions = []
+    print(all_scales)
 
     # next block is for log-scaling log scaled variables because plotly doesn't support it trivialy
     for i in range(len(all_labels)):
@@ -837,7 +877,8 @@ def parallelPlot(x, y, input_info, output_info):
         if all_scales[i] == "log":
             for j in range(len(data)):
                 data[j] = math.log(data[j])
-            ticks = [max(data)*i/10 for i in range(11)]
+            n = 15
+            ticks = [max(data)*i/n for i in range(n+1)]
             text = [format(math.exp(ticks[i]), "1.2E") for i in range(len(ticks))]
             d = dict(label=all_labels[i], values = data, tickvals=ticks, ticktext=text)
         else:
@@ -845,23 +886,26 @@ def parallelPlot(x, y, input_info, output_info):
 
         dimensions.append(d)
 
+    # EST CE QUE CA MARCHE AVEC DES CATEGORIES ?
     fig = go.Figure(data=go.Parcoords(dimensions=dimensions))
     fig.show()
 
 
 
-def pairPlot(x, y, input_info, output_info):
-    all_data = pa.DataFrame(np.hstack([x, y]))
-    all_labels = np.hstack([[input_info[i][0] for i in range(len(input_info))], [output_info[i][0] for i in range(len(output_info))]])
-    all_data.columns = all_labels
-    all_scales = np.hstack([[input_info[i][2] for i in range(len(input_info))], [output_info[i][1] for i in range(len(output_info))]])
+def pairPlot(inputs, outputs, input_info, output_info):
+    all_labels = list(input_info["name"]) + list(output_info["name"])
+    all_scales = list(input_info["scale"]) + list(output_info["scale"])
+    # put data in the same order as the ones in the infos
+    all_data = pa.concat([inputs[input_info["name"]], outputs[output_info["name"]]], axis=1)
 
     log_labels = []
     for i in range(len(all_labels)):
         if all_scales[i] == "log":
             log_labels.append(all_labels[i])
 
-    fig = seaborn.pairplot(all_data, y_vars=[output_info[i][0] for i in range(len(output_info))], x_vars=[input_info[i][0] for i in range(len(input_info))])
+    # COMMENT NE TRACER QUE LES LIGNES AYANT Y EN ORDONEE ?
+    # FAUT-IL NE PAS TRACER CE QUI EST APRES LA DIAGONALE ?
+    fig = seaborn.pairplot(all_data, x_vars=all_labels[:inputs.shape[1]], y_vars=all_labels[inputs.shape[1]:])
     for ax in fig.axes.flat:
         if ax.get_xlabel() in log_labels:
             ax.set(xscale="log")
@@ -881,15 +925,27 @@ def pairPlot(x, y, input_info, output_info):
 
 
 class BayesianOptimizer:
-    def __init__(self, title, input_info, constraints, seed, threads, iso="diag", epsilon=1e-13):
+    def __init__(self,
+                title : str,
+                input_info : pa.DataFrame,
+                output_info : pa.DataFrame,
+                seed : int,
+                threads : int,
+                iso : str = "diag",
+                epsilon : float = 1e-13) -> None:
+
+        check_input_info(input_info)
+        check_output_info(output_info)
+
         self.title = title
         self.input_info = input_info
-        self.dummy_data_info = dummify_data_info(input_info)
-        self.constraints = constraints
+        self.dummy_input_info = dummify_input_info(input_info)
+        self.output_info = output_info
+        self.original_seed = seed
         self.seed = seed
         self.threads = threads
-        self.x = None
-        self.y = None
+        self.dummy_inputs = None
+        self.outputs = None
         self.iso = iso
         self.epsilon = epsilon
         self.kernel = None
@@ -897,47 +953,67 @@ class BayesianOptimizer:
 
 
 
-    def add_data(self, x, y):
-        x = np.array(x)
-        y = np.array(y)
-        if  x.ndim != 2:
-            error("X data must be 2-dimensional")
-        if  y.ndim != 2:
-            error("Y data must be 2-dimensional")
-        if y.shape[1] != len(self.constraints)+1:
-            error("Y data must containt as much data as constraints + 1 (ie: " + str(len(self.constraints)+1) + "). " + str(y.shape[1]) + " provided")
-        if self.x == None:
-            self.x = x
-            self.y = y
+    def add_data(self, dummy_inputs : pa.DataFrame, outputs : pa.DataFrame) -> None:
+        #outputs are real ones, not processed ones
+
+        for name in self.input_info["name"]:
+            if name not in dummy_inputs.columns:
+                error("Column \"" + name + "\" not found in the added inputs")
+        for name in dummy_inputs.columns:
+            if name not in self.input_info["name"].values:
+                error("Column \"" + name + "\" have been found in the added inputs but is not specified in the input_info")
+        for name in self.output_info["name"]:
+            if name not in outputs.columns:
+                error("Column \"" + name + "\" not found in the added outputs")
+        for name in outputs.columns:
+            if name not in self.output_info["name"].values:
+                error("Column \"" + name + "\" have been found in the added outputs but is not specified in the input_info")
+
+        if dummy_inputs.shape[0] != outputs.shape[0]:
+            error("The added inputs and outputs must have the same number of rows")
+
+        if self.dummy_inputs == None:
+            self.dummy_inputs = dummy_inputs
+            self.outputs = outputs
         else:
-            self.x = np.vstack([self.x, x])
-            self.y = np.vstack([self.y, y])
+            self.dummy_inputs = pa.concat([self.dummy_inputs, dummy_inputs], ignore_index=True)
+            self.outputs = pa.concat([self.outputs, outputs], ignore_index=True)
+
+        self.kernel = None
+        self.metric = None
 
 
 
 
     def first_points(self, n):
         self.seed += 1
-        return first_points(self.input_info, n, self.seed)
+        dummy_points = first_points(self.dummy_input_info, n, self.seed)
+        real_points = postprocess_inputs(dummy_inputs=dummy_points, input_info=self.input_info)
+        return dummy_points, real_points
 
 
 
     def next_points(self, n, a, metric_bounds=[-12, 12]):
-        x = preprocess_inputs(self.x, self.input_info)
-        y = preprocess_outputs(self.y)
-
-        print(np.hstack([x, y]), flush=True)
-
+        inputs = self.dummy_inputs
+        outputs, out_info = preprocess_outputs_and_info(outputs=self.outputs, output_info=self.output_info)
         self.seed += 1
+
         print("Calculating optimal metrics", flush=True)
-        diffs = make_diff_list(x, self.input_info, uncertainties=False)
+        diffs = make_diff_list(inputs=inputs)
+        print(diffs)
 
         metrics = []
         kernels = []
-        for i in range(len(self.constraints)+1):
-            metric, lml = optimal_metric(diffs, x, y[:,i], metric_bounds, self.iso, self.seed, self.threads)
+        for i in range(out_info.shape[0]):
+            metric, lml = optimal_metric(diffs=diffs,
+                                        x=inputs.to_numpy(),
+                                        y=outputs.to_numpy()[:,i],
+                                        bounds=metric_bounds,
+                                        iso=self.iso,
+                                        seed=self.seed,
+                                        threads=self.threads)
             metrics.append(metric)
-            kernels.append(make_kernel(diffs, metric))
+            kernels.append(make_kernel(diffs=diffs, metric=metric))
 
         print(metrics[0], flush=True)
         print("lml = " + str(lml), flush=True)
@@ -945,22 +1021,42 @@ class BayesianOptimizer:
         print(kernels[0], flush=True)
 
         self.seed += 1
-        m = 100 * len(self.dummy_data_info) * math.ceil(math.sqrt(len(self.dummy_data_info)))
+        m = 100 * len(self.dummy_input_info) * math.ceil(math.sqrt(self.dummy_input_info.shape[0]))
         print("Calculating next points", flush=True)
 
         models = []
         for i in range(len(metrics)):
-            models.append((kernels[i], y[:,i], metrics[i]))
+            models.append((kernels[i], outputs.to_numpy()[:,i], metrics[i]))
+
+        # GERER LA POSITION DE L'OBJECTIF DANS LES OUTPUTS ET DANS L'OUTPUT_INFO
+        # GERER L'ORDRE DES CONTRAINTES
+        ei, raw_next_pts = list(next_points(models=models,
+                                            x=inputs.to_numpy(),
+                                            input_info=self.dummy_input_info,
+                                            constraints=None,
+                                            n=m, seed=self.seed, a=a, epsilon=self.epsilon,
+                                            threads=self.threads))
+
+        self.kernel = kernels
+        self.metric = metrics
+        return raw_next_pts, postprocess_inputs(raw_next_pts, self.input_info)
 
 
-        next_pts = np.array(list(next_points(models, x, self.dummy_data_info, m, self.seed, a, self.epsilon, self.threads).values()))[:n]
-        if n > next_pts.shape[0]-1:
-            n =  next_pts.shape[0]-1
+    def plot1D(self):
+        # plot constraints too
+        pass
 
-        self.kernel = kernels[0]
-        self.metric = metrics[0]
-        return postprocess_inputs(next_pts, self.dummy_data_info)
 
+    def plot2D(self):
+        pass
+
+
+    def parallelPlot(self):
+        parallelPlot(postprocess_inputs(self.dummy_inputs, self.input_info), self.outputs, self.input_info, self.output_info)
+
+
+    def pairPlot(self):
+        pairPlot(postprocess_inputs(self.dummy_inputs, self.input_info), self.outputs, self.input_info, self.output_info)
 
 
     def save(self):
